@@ -1,8 +1,4 @@
-"""Loader for the Santander Product Recommendation raw data.
-
-Untested against the real file — data/raw/train_ver2.csv is not downloaded yet.
-Once it is, run this module directly for a quick shape/missingness/memory report.
-"""
+"""Loader for the Santander Product Recommendation raw data."""
 
 from pathlib import Path
 
@@ -35,6 +31,31 @@ def basic_report(df: pd.DataFrame, top_missing: int = 20) -> None:
 
     mem_mb = df.memory_usage(deep=True).sum() / 1024**2
     print(f"\nmemory usage: {mem_mb:.1f} MB")
+
+
+def full_scan_report(path: Path = TRAIN_PATH, chunksize: int = 500_000) -> None:
+    """Stream the full file in chunks to get exact row count and missingness
+    without loading the whole file into memory at once. Prints a running
+    total at the end."""
+    total_rows = 0
+    missing_total = None
+    columns = None
+
+    for chunk in pd.read_csv(path, chunksize=chunksize, low_memory=False):
+        total_rows += len(chunk)
+        if columns is None:
+            columns = list(chunk.columns)
+        chunk_missing = chunk.isna().sum()
+        missing_total = chunk_missing if missing_total is None else missing_total + chunk_missing
+
+    print(f"total rows: {total_rows}")
+    print(f"columns ({len(columns)}): {columns}")
+    missing_total = missing_total.sort_values(ascending=False)
+    missing_total = missing_total[missing_total > 0]
+    print(f"\nmissing values (full file, {total_rows} rows):")
+    print(missing_total)
+    print("\nmissing fraction:")
+    print((missing_total / total_rows).round(4))
 
 
 if __name__ == "__main__":
