@@ -75,19 +75,21 @@ Source: https://www.kaggle.com/c/santander-product-recommendation
 - `ind_recibo_ult1` — direct debit
 
 ## Label construction (adoption)
-For a candidate product column `ind_X_ult1`:
-- Adoption event for customer *c* in month *t* = `ind_X_ult1[c, t-1] == 0` and
-  `ind_X_ult1[c, t] == 1`.
+For `ind_tjcr_fin_ult1` (Service A, see below):
+- Adoption event for customer *c* in month *t* = `ind_tjcr_fin_ult1[c, t-1] == 0`
+  and `ind_tjcr_fin_ult1[c, t] == 1`.
 - Requires joining each customer's row in month *t* to their row in month *t-1* —
   watch for customers who are new in month *t* (no prior row) and customers who
   churn out entirely (no row in month *t*).
 
-## Service A candidates (decision not yet finalized)
-| Column | Product | Notes |
-|---|---|---|
-| `ind_tjcr_fin_ult1` | Credit card | Classic cross-sell target, likely richest behavioral signal |
-| `ind_nomina_ult1` | Payroll account | Sticky, high-value, but adoption may be driven by employer switch (less "marketable") |
-| `ind_fond_fin_ult1` | Mutual funds | Investment product, likely correlates with income/wealth segment |
+## Service A: credit card (`ind_tjcr_fin_ult1`)
+**Decided** — see `docs/decisions/001-service-a-product-choice.md` for full
+reasoning. Prevalence across the 17 monthly snapshots (full-file scan) ranges
+from ~5.8% (2015 mid-year) down to ~3.7% (by mid-2016) of the customer base
+holding a credit card in a given month — a large, non-holder-dominated pool to
+target, and a product a bank can plausibly influence via outreach (unlike
+payroll, which is more employer-switch-driven).
 
-Decision to be logged as a decision record in `docs/decisions/` once Phase 1 EDA
-shows adoption rates and data quality for each candidate.
+The two products considered and passed over (payroll account
+`ind_nomina_ult1`, mutual funds `ind_fond_fin_ult1`) are documented in the
+decision record above for reference.

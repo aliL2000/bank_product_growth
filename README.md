@@ -29,9 +29,9 @@ https://www.kaggle.com/c/santander-product-recommendation
   `data/raw/`.
 - See `docs/dataset.md` for the full data dictionary and download steps.
 
-Candidate "Service A" products (decision to be finalized in Phase 1, logged in
-`docs/decisions/`): credit card (`ind_tjcr_fin_ult1`), payroll account
-(`ind_nomina_ult1`), mutual funds (`ind_fond_fin_ult1`).
+**Service A is credit card (`ind_tjcr_fin_ult1`)** — decided 2026-07-29, see
+`docs/decisions/001-service-a-product-choice.md` for the full reasoning
+(payroll account and mutual funds were the alternatives considered).
 
 ## Project structure
 

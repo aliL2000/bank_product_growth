@@ -14,7 +14,7 @@ entry to the working log every session, even a short one.
 ## Phase 1 — Understand the Data (Weeks 2–4)
 - [x] Run `load_data.py` against real data, check shape/dtypes/memory footprint
 - [x] Profile missingness across all 24 profile columns (full-file scan)
-- [ ] Finalize which product is "Service A" (log decision in `docs/decisions/`)
+- [x] Finalize which product is "Service A" (log decision in `docs/decisions/`)
 - [ ] Build the adoption label (lacked product in month t-1, gained it in month t)
 - [ ] First EDA notebook — adoption rate over time, by segment
 - [ ] Write `reports/01_eda_findings.md`
@@ -77,3 +77,16 @@ entry to the working log every session, even a short one.
   adoption label construction, EDA notebook, `reports/01_eda_findings.md`.
 - Next: decide on memory-safe full-load strategy (dtype downcasting / chunked
   feature engineering), then finalize Service A and build the adoption label.
+
+### 2026-07-29
+- Finalized Service A = credit card (`ind_tjcr_fin_ult1`). Computed month-by-month
+  prevalence via a chunked scan (grouped by `fecha_dato`, summed the flag) across
+  all 17 months: ranges from ~5.8% (mid-2015) down to ~3.7% (mid-2016) of
+  customers holding a card — a large non-holder pool, and a product a bank can
+  plausibly influence with outreach, unlike payroll (employer-switch-driven).
+  Logged full reasoning in `docs/decisions/001-service-a-product-choice.md`,
+  updated `docs/dataset.md` and `README.md` to reflect the decision as settled.
+- Repo pushed to GitHub: https://github.com/aliL2000/bank_product_growth
+  (remote added by Claude; push run by Adam per the no-push-credentials boundary).
+- Next: build the adoption label (non-holder in month t-1, holder in month t)
+  and start the first EDA notebook.
