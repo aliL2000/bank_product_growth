@@ -15,7 +15,7 @@ entry to the working log every session, even a short one.
 - [x] Run `load_data.py` against real data, check shape/dtypes/memory footprint
 - [x] Profile missingness across all 24 profile columns (full-file scan)
 - [x] Finalize which product is "Service A" (log decision in `docs/decisions/`)
-- [ ] Build the adoption label (lacked product in month t-1, gained it in month t)
+- [x] Build the adoption label (lacked product in month t-1, gained it in month t)
 - [ ] First EDA notebook — adoption rate over time, by segment
 - [ ] Write `reports/01_eda_findings.md`
 
@@ -90,3 +90,23 @@ entry to the working log every session, even a short one.
   (remote added by Claude; push run by Adam per the no-push-credentials boundary).
 - Next: build the adoption label (non-holder in month t-1, holder in month t)
   and start the first EDA notebook.
+
+### 2026-08-02
+- Built the credit card adoption label in `src/features/build_adoption_label.py`.
+  Loaded only the 3 needed columns (`fecha_dato`, `ncodpers`, `ind_tjcr_fin_ult1`)
+  with narrow dtypes (int32/int8) — 273 MB in memory, no chunking needed, since
+  the earlier ~15 GB memory concern was specific to loading all 48 columns.
+- Used a merge-based lag join (each row matched to the same customer's row at
+  month-1 via an explicit `(ncodpers, month)` key) instead of a positional
+  `groupby().shift()`, since 7.1% of rows (964,888) have no prior-month row at
+  all (new customers / gaps) and a positional shift would have silently mislabeled
+  those. Both techniques logged in `docs/concepts_log.md`.
+- Key finding: adoption rate is **~0.57% per month** among eligible non-holders
+  (69,118 adoption events out of 12,111,689 eligible customer-months) — a rare
+  event. This is a real class-imbalance problem and will shape Phase 2 model
+  choices (e.g. can't just optimize accuracy; may need class weighting or
+  threshold/ranking-based evaluation, which fits the precision@K framing anyway).
+- Output written to `data/processed/adoption_labels_tjcr.csv` (599 MB, gitignored,
+  not committed).
+- Next: first EDA notebook — adoption rate over time and by customer segment,
+  then `reports/01_eda_findings.md`.
