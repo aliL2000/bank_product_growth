@@ -15,3 +15,6 @@ venv/
 .DS_Store
 kaggle.json
 .env
+
+# personal-understanding artifacts, not part of the tracked portfolio history
+reports/Project_Recap.pdf

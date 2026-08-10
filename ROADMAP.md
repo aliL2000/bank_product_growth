@@ -3,6 +3,14 @@
 5 phases, ~16 weeks. This is a living document — update checkboxes and add a dated
 entry to the working log every session, even a short one.
 
+> **Status at a glance (update this block every session — keep it to ~5 lines):**
+> Currently in **Phase 1 — Understand the Data**. Service A is decided (credit
+> card, `ind_tjcr_fin_ult1`; see `docs/decisions/001-service-a-product-choice.md`).
+> The adoption label is built (`data/processed/adoption_labels_tjcr.csv`,
+> gitignored — rerun `src/features/build_adoption_label.py` if missing).
+> **Next up:** first EDA notebook — adoption rate over time and by segment —
+> then `reports/01_eda_findings.md`. Full detail is in the Working Log below.
+
 ## Phase 0 — Setup (Week 1)
 - [x] Scaffold repo structure
 - [x] Write `.gitignore`, `requirements.txt`

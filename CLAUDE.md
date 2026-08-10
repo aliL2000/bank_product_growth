@@ -1,5 +1,27 @@
 # CLAUDE.md — instructions for Claude Code in this repo
 
+## Session start protocol (do this before proposing any work)
+This is a long-running project worked on in short daily-ish sessions, often as a
+fresh Claude Code session with no memory of prior conversations. Before proposing
+or starting any work in a new session:
+
+1. Read `ROADMAP.md` in full — the checkboxes show phase progress, and the
+   **Working Log** (dated, newest at the bottom) has the real narrative: what was
+   done, what was found, and each entry's final "Next:" line is the intended
+   starting point for the following session.
+2. Skim `docs/decisions/` (filenames are numbered — read the highest-numbered
+   ones first) for any settled decisions that constrain what you should suggest
+   (e.g. don't re-litigate which product is "Service A" — check first).
+3. Skim `docs/concepts_log.md`'s most recent entries so explanations stay
+   consistent with what's already been taught, instead of re-explaining a concept
+   from scratch or contradicting an earlier explanation.
+4. Sanity-check that `data/raw/train_ver2.csv` and `test_ver2.csv` are still
+   present before assuming any data-dependent step can run — they're gitignored,
+   so a fresh clone or a different machine won't have them.
+5. Only after that, propose the next concrete step — don't assume the person
+   wants you to auto-continue through multiple ROADMAP phases in one sitting
+   (see "Incremental workflow" below).
+
 ## Teaching requirement (non-negotiable for this project)
 This project exists partly so I (Adam) learn the concepts, not just get working code.
 Every session, for every non-trivial thing you implement:
