@@ -97,3 +97,41 @@ genuine adoption. Here that's 964,888 rows (7.1% of the file) explicitly exclude
 from the eligible population rather than silently mislabeled — worth stating
 plainly in any writeup, since it's a modeling choice with a real effect on the
 reported adoption rate.
+
+### 2026-08-10 — Point-in-time correctness (avoiding label leakage in feature joins)
+
+**Concept**: When attaching a customer attribute (age, income, activity flag,
+etc.) to a labeled row, the attribute must be measured *before* the event
+being predicted, not at or after it. "Leakage" is when a feature secretly
+encodes information from the future relative to the prediction point, making
+the model look far more accurate than it will ever be in production, where
+that future information genuinely isn't available yet.
+
+**Why here**: the EDA notebook (`notebooks/01_eda.ipynb`) needed to join each
+adoption-label row (customer, month *t*) to that customer's profile
+attributes to see how adoption varies by age, tenure, income, etc. The
+tempting shortcut is to use the profile fields that live in the *same row* as
+the label (i.e., month *t*'s own profile columns) — but month *t* is the
+month the adoption already happened in. A customer's `ind_actividad_cliente`
+(activity flag) or other attributes in month *t* could already reflect the
+consequences of having just gotten the card, not their state beforehand. Any
+pattern found that way risks being "the model learned that adopters look
+different in the month they adopt" rather than "the model learned who is
+about to adopt" — true but useless for the actual business goal of acting
+*before* the event.
+
+**How it works**: reuse the same merge-based lag-join technique from the
+label build itself (`(ncodpers, month)` as an explicit key), but join the
+label rows to the profile table at `month - 1` instead of `month`. This
+guarantees every attribute used downstream (in this EDA, and later in Phase 2
+features) was knowable at the point a targeting decision would actually have
+to be made.
+
+**Watch out for**: leakage is rarely this obvious in real projects — it's easy
+to introduce it by accident through columns that look purely descriptive
+("customer's current total balance") but are quietly computed using
+data from after the prediction point, or through preprocessing done on the
+full dataset before a time-based split (e.g., computing a mean or scaling
+factor over all months, which lets information from future months leak into
+earlier rows). The general check is: "could I have known this value at the
+moment I'd need to act on the prediction?" — if not, it can't be a feature.

@@ -4,12 +4,15 @@
 entry to the working log every session, even a short one.
 
 > **Status at a glance (update this block every session — keep it to ~5 lines):**
-> Currently in **Phase 1 — Understand the Data**. Service A is decided (credit
-> card, `ind_tjcr_fin_ult1`; see `docs/decisions/001-service-a-product-choice.md`).
-> The adoption label is built (`data/processed/adoption_labels_tjcr.csv`,
-> gitignored — rerun `src/features/build_adoption_label.py` if missing).
-> **Next up:** first EDA notebook — adoption rate over time and by segment —
-> then `reports/01_eda_findings.md`. Full detail is in the Working Log below.
+> **Phase 1 is complete.** Service A is decided (credit card,
+> `ind_tjcr_fin_ult1`; see `docs/decisions/001-service-a-product-choice.md`),
+> the adoption label is built (`data/processed/adoption_labels_tjcr.csv`,
+> gitignored — rerun `src/features/build_adoption_label.py` if missing), and
+> the EDA notebook + findings write-up are done (`notebooks/01_eda.ipynb`,
+> `reports/01_eda_findings.md`) — strongest signals found: activity index,
+> tenure, segmento.
+> **Next up:** Phase 2 — time-respecting train/val split, then feature
+> engineering. Full detail is in the Working Log below.
 
 ## Phase 0 — Setup (Week 1)
 - [x] Scaffold repo structure
@@ -24,8 +27,8 @@ entry to the working log every session, even a short one.
 - [x] Profile missingness across all 24 profile columns (full-file scan)
 - [x] Finalize which product is "Service A" (log decision in `docs/decisions/`)
 - [x] Build the adoption label (lacked product in month t-1, gained it in month t)
-- [ ] First EDA notebook — adoption rate over time, by segment
-- [ ] Write `reports/01_eda_findings.md`
+- [x] First EDA notebook — adoption rate over time, by segment
+- [x] Write `reports/01_eda_findings.md`
 
 ## Phase 2 — Baseline Model (Weeks 5–7)
 - [ ] Time-respecting train/val split (train on earlier months, validate on later)
@@ -118,3 +121,33 @@ entry to the working log every session, even a short one.
   not committed).
 - Next: first EDA notebook — adoption rate over time and by customer segment,
   then `reports/01_eda_findings.md`.
+
+### 2026-08-10
+- Refreshed `reports/Project_Recap.pdf` (a plain-language, non-ML-audience
+  project summary) via a new reusable generator script,
+  `src/reports/generate_project_recap.py` (uses `fpdf2`, added to
+  `requirements.txt`). No content changes this pass — the recap already
+  matched the 2026-08-02 state — but it's now a one-command rebuild instead
+  of a one-off artifact.
+- Built `notebooks/01_eda.ipynb`: adoption rate over time (roughly halved
+  across the 17-month window, ~0.79–0.86% in mid-2015 down to ~0.44–0.50% by
+  early-mid 2016, no strong seasonality) and by customer segment. Segment
+  breakdowns join each labeled row to that customer's **month t-1** profile
+  attributes (not month t) specifically to avoid label leakage — logged as a
+  new concept in `docs/concepts_log.md` (point-in-time correctness).
+- Strongest signals found: `ind_actividad_cliente` (activity index: 1.28% vs.
+  0.03%, ~50x), `segmento` (TOP 3.01% vs. UNIVERSITARIO 0.09%, >30x), and
+  `antiguedad`/tenure (0.11% → 1.44% monotonically with tenure, ~13x).
+  Weaker but real: income (~2.4x top vs. bottom quintile), sex (~1.6x), age
+  (non-monotonic, peaks at 40–50). Full numbers and data-quality caveats
+  (`antiguedad`'s `-999999` placeholder, implausible `age` values up to 164,
+  `renta`'s ~20% missingness) written up in `reports/01_eda_findings.md`.
+- Discovered `requirements.txt` wasn't actually fully installed in this
+  environment (only pandas/numpy were present) — installed `matplotlib`,
+  `nbconvert`, and `ipykernel` as needed to run the notebook.
+- **Phase 1 is now complete.**
+- Next: Phase 2 — time-respecting train/val split (train on earlier months,
+  validate on later), then feature engineering building on today's findings
+  (activity index, tenure, segmento as priority features; explicit cleaning
+  needed for `antiguedad`'s placeholder value and `age`'s outliers; an
+  imputation strategy for `renta`).
