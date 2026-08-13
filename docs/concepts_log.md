@@ -135,3 +135,38 @@ full dataset before a time-based split (e.g., computing a mean or scaling
 factor over all months, which lets information from future months leak into
 earlier rows). The general check is: "could I have known this value at the
 moment I'd need to act on the prediction?" — if not, it can't be a feature.
+
+### 2026-08-13 — Time-respecting (period-based) train/val split
+
+**Concept**: Splitting a panel dataset into train/validation by *time period*
+rather than by row or by entity — every row from an earlier month goes to
+train, every row from a later month goes to val, with no shuffling.
+
+**Why here**: `train_test_split(..., shuffle=True)` (or any random split) would
+put some of a customer's earlier-month rows in val and later-month rows in
+train, or vice versa. Because consecutive months for the same customer are
+highly correlated (tenure, activity, income barely change month to month), the
+model would effectively get to see a smeared version of the answer during
+training — inflating validation performance in a way that wouldn't hold up
+once the model is scoring genuinely future, unseen months in production. Full
+reasoning and the exact cutoff logged in
+`docs/decisions/002-train-val-split.md`.
+
+**How it works**: `src/features/train_val_split.py` tags every labeled row
+(2015-02 through 2016-05) `train` if its month is before 2016-03, `val`
+otherwise — the last 3 labeled months become validation (2.77M rows, 12,749
+adoption events), the other 13 become train (9.91M rows, 56,369 events). No
+random component at all; the split boundary is a single date. Note this is a
+period split, not a customer split — the same `ncodpers` legitimately shows up
+in both train and val (at different months), since the question being tested
+is "does this generalize to future months," not "does this generalize to
+unseen customers."
+
+**Watch out for**: a period split only prevents *temporal* leakage — it does
+nothing about leakage from aggregate statistics computed across the whole
+dataset before splitting. Any global feature built in Phase 2 (mean-encodings,
+overall averages, scalers) still has to be *fit* on train only and *applied*
+to val, or the val rows contaminate the statistic used to score them. Also,
+because the same customer appears in both splits, it's tempting to mistake
+that for a bug (e.g. thinking there's "customer leakage") — it isn't, as long
+as no single *row's* features reach past that row's own month.
