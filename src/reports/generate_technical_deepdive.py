@@ -140,7 +140,9 @@ def build():
     pdf.multi_cell(
         0, 5,
         "Prepared August 2026 - covers the reasoning behind Phase 0 and "
-        "Phase 1 work, plus the decided (not yet implemented) plan for Phase 2.",
+        "Phase 1 work, Phase 2's train/validation split and first feature "
+        "group (now implemented), plus the decided (not yet implemented) "
+        "plan for the rest of Phase 2.",
         align="L", new_x="LMARGIN", new_y="NEXT",
     )
     pdf.ln(4)
@@ -160,10 +162,12 @@ def build():
     pdf.ln(1.5)
     pdf.multi_cell(
         0, 5.6,
-        "Sections are grouped by project phase. Part 1 through Part 3 cover "
-        "work that is done and verified against real output. Part 4 covers "
-        "the Phase 2 plan - genuinely decided, with reasons, but not yet "
-        "written as code - and is marked accordingly throughout.",
+        "Sections are grouped by project phase. Part 1 through Part 4 cover "
+        "work that is done and verified against real output - Part 4 "
+        "specifically covers Phase 2 work completed so far (the "
+        "train/validation split and the first feature group). Part 5 covers "
+        "the remaining Phase 2 plan - genuinely decided, with reasons, but "
+        "not yet written as code - and is marked accordingly throughout.",
         align="L", new_x="LMARGIN", new_y="NEXT",
     )
     pdf.ln(2)
@@ -476,16 +480,10 @@ def build():
 
     # ================= PART 4 =================
     pdf.add_page()
-    pdf.part_title("Part 4 - Phase 2 Plan: Building the Model")
-    pdf.planned_banner(
-        "Everything in this part is a decided plan with real reasoning "
-        "behind it, not yet-written code. Treat it as 'here's the plan and "
-        "why,' and expect this section to be revised once it's actually "
-        "implemented and tested against real results."
-    )
+    pdf.part_title("Part 4 - Phase 2 So Far: Split & First Feature Group")
 
     topic_block(
-        pdf, 9, "Time-based train/validation split",
+        pdf, 9, "Time-based (period) train/validation split",
         why=(
             "The real use case predicts the future from the past. A random "
             "split would validate the model on rows chronologically mixed "
@@ -496,16 +494,26 @@ def build():
             "deployment time."
         ),
         how=(
-            "Train on the earliest N months, validate on the next month(s) "
-            "chronologically - mirroring how the model would actually be "
-            "deployed: trained on history, scored on the present."
+            "src/features/train_val_split.py tags every labeled row "
+            "(2015-02 through 2016-05) 'train' if its month is before "
+            "2016-03, 'val' otherwise, with no random component and no gap "
+            "month - the split boundary is a single date. Result: train = "
+            "9,913,274 rows / 56,369 adoptions (0.57%), val = 2,769,147 "
+            "rows / 12,749 adoptions (0.46%). Note this is a period split, "
+            "not a customer-holdout split - the same customer legitimately "
+            "appears in both, at different months, since the question being "
+            "tested is generalization to future months, not to unseen "
+            "customers."
         ),
         alt=(
             "k-fold cross-validation - scikit-learn's default, excellent for "
             "independent (i.i.d.) rows, the wrong tool here because rows are "
             "not independent across time. TimeSeriesSplit is scikit-learn's "
             "built-in mechanism for the time-respecting version of the same "
-            "idea."
+            "idea; a single fixed cutoff was used instead of multiple "
+            "rolling folds since the priority right now is a stable "
+            "validation set to compare feature/model choices against, not "
+            "yet a full time-series CV study."
         ),
         watch=(
             "Even within a correct time-based split, any preprocessing that "
@@ -513,16 +521,71 @@ def build():
             "values, computing category frequencies) must be fit only on "
             "the training window and then applied to validation - fitting "
             "it on the full dataset first reintroduces leakage even if the "
-            "split itself is correct."
+            "split itself is correct. See Topic 10 for where this already "
+            "mattered in practice. Full reasoning in "
+            "docs/decisions/002-train-val-split.md."
         ),
         links=[
             ("scikit-learn - TimeSeriesSplit", "https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html"),
         ],
-        planned=True,
     )
 
     topic_block(
-        pdf, 10, "Logistic regression as the baseline",
+        pdf, 10, "Train-fit imputation with a missingness indicator flag",
+        why=(
+            "The first Phase 2 feature group (tenure via antiguedad, and "
+            "activity via ind_actividad_cliente) has a small share of "
+            "missing values (0.161% of rows, after also converting "
+            "antiguedad's -999999 bad-data placeholder to a proper NaN). "
+            "Those need a fill value - and computing it from train+val "
+            "combined would let val rows quietly influence the value used "
+            "to fill train rows, a smaller instance of the same leakage "
+            "Topic 9 guards against structurally."
+        ),
+        how=(
+            "src/features/build_features_tenure_activity.py computes the "
+            "fill value (median for tenure, mode for activity) using only "
+            "rows tagged 'train', then applies that single fixed value to "
+            "both splits via .fillna(). Before filling, an isna() snapshot "
+            "is saved into a separate *_missing boolean column per feature, "
+            "so a downstream model can still distinguish 'genuinely had "
+            "this value' from 'value was unknown and got the fallback.'"
+        ),
+        alt=(
+            "Dropping rows with missing values - rejected, since even a "
+            "small missing rate compounds across many feature groups and "
+            "would shrink the usable dataset for no real benefit here. "
+            "Fitting the imputer on the full dataset (train+val) before "
+            "splitting - the simplest-looking approach, and the one "
+            "rejected specifically for the leakage reason described above."
+        ),
+        watch=(
+            "This pattern has to be repeated for every imputed feature "
+            "added in later Phase 2 groups (income, channel, etc.) - easy "
+            "to forget on a later feature and compute a fill value across "
+            "the full dataset out of habit. Also, a train-fit median/mode "
+            "can technically fall outside val's true distribution if it has "
+            "shifted over time (which the Phase 1 EDA already showed for "
+            "tenure/activity) - that's expected and correct, not a bug to "
+            "fix by refitting on val."
+        ),
+        links=[
+            ("scikit-learn - Imputation of missing values", "https://scikit-learn.org/stable/modules/impute.html"),
+        ],
+    )
+
+    # ================= PART 5 =================
+    pdf.add_page()
+    pdf.part_title("Part 5 - Phase 2 Plan: Building the Model")
+    pdf.planned_banner(
+        "Everything in this part is a decided plan with real reasoning "
+        "behind it, not yet-written code. Treat it as 'here's the plan and "
+        "why,' and expect this section to be revised once it's actually "
+        "implemented and tested against real results."
+    )
+
+    topic_block(
+        pdf, 11, "Logistic regression as the baseline",
         why=(
             "Before reaching for a more powerful model, the plan is to "
             "establish a simple, fast, fully interpretable baseline. Its "
@@ -557,7 +620,7 @@ def build():
     )
 
     topic_block(
-        pdf, 11, "Gradient-boosted trees (LightGBM) as the stronger model",
+        pdf, 12, "Gradient-boosted trees (LightGBM) as the stronger model",
         why=(
             "Tabular data with a mix of numeric and categorical features, a "
             "nonlinear relationship for age, and likely interactions "
@@ -641,9 +704,10 @@ def build():
     pdf.multi_cell(
         0, 5,
         "This document reflects project state as of August 2026 (through "
-        "the end of Phase 1). For the running, dated log of every concept "
-        "as it's introduced, see docs/concepts_log.md in the repository; "
-        "for the plain-language project narrative, see Project_Recap.pdf.",
+        "the train/validation split and first feature group of Phase 2). "
+        "For the running, dated log of every concept as it's introduced, "
+        "see docs/concepts_log.md in the repository; for the "
+        "plain-language project narrative, see Project_Recap.pdf.",
         align="L", new_x="LMARGIN", new_y="NEXT",
     )
 

@@ -170,3 +170,41 @@ to val, or the val rows contaminate the statistic used to score them. Also,
 because the same customer appears in both splits, it's tempting to mistake
 that for a bug (e.g. thinking there's "customer leakage") — it isn't, as long
 as no single *row's* features reach past that row's own month.
+
+### 2026-08-17 — Train-fit imputation with a missingness indicator flag
+
+**Concept**: When filling missing values in a feature, (1) compute the fill
+value (a median, mode, mean, etc.) using *only* the train split, and apply
+that same fixed value to both train and val rows, and (2) keep a separate
+boolean column recording *which* rows were originally missing, rather than
+letting the filled value silently look like a real observation.
+
+**Why here**: `src/features/build_features_tenure_activity.py` needed to
+fill `antiguedad` (tenure) and `ind_actividad_cliente` (activity index) for
+the ~0.16% of rows where they're missing (same shared data-quality issue
+flagged in the Phase 1 missingness scan). Computing the median/mode across
+train+val together would mean the imputed value for a train row is
+influenced, even slightly, by val rows' values — a small but real instance of
+the same leakage `docs/decisions/002-train-val-split.md` already warns about
+for any "global" statistic. Separately, imputing without a flag would make a
+row that's missing "look like" a row whose real tenure happens to equal the
+median — throwing away the information that the value was unknown at all,
+which can itself be predictive (e.g. missing profile fields cluster with a
+specific data-entry issue, not randomly).
+
+**How it works**: `df.loc[train_mask, col].median()` (or `.mode().iloc[0]`
+for a categorical/binary column) computes the fill value from train rows
+only; `df[col].fillna(value)` then applies that single fixed number to every
+row, train and val alike — val rows are *scored* by it, never *involved* in
+computing it. Before filling, `df[col].isna()` is saved off into its own
+`{col}_missing` boolean column so a downstream model can still tell "this was
+a 49-month tenure" apart from "this was unknown and got the fallback value of
+49."
+
+**Watch out for**: this pattern needs to be repeated for *every* imputed
+feature in Phase 2 (income, channel, etc.) — it's easy to forget on a later
+feature and accidentally compute a fill value across the full dataset out of
+habit. Also, a median/mode fit on train can technically fall outside the
+range seen in val (e.g. if val's true distribution has shifted, which the
+EDA already showed for tenure/activity over time) — that's expected and
+correct, not a bug to "fix" by refitting on val.

@@ -190,3 +190,32 @@ entry to the working log every session, even a short one.
   activity, demographics — joined against `train_val_split.csv`, built from
   train-only statistics where any aggregation is involved (per the caveat in
   `docs/decisions/002-train-val-split.md`).
+
+### 2026-08-17
+- Built the first Phase 2 feature group — tenure and activity index — in
+  `src/features/build_features_tenure_activity.py`. Joins
+  `train_val_split.csv` to each customer's `antiguedad`/`ind_actividad_cliente`
+  at month *t-1* (same merge-key trick as the label build/EDA), cleans the
+  `antiguedad` `-999999` placeholder and string `"NA"` flagged in
+  `reports/01_eda_findings.md`, and imputes missing values (0.161% of rows)
+  using train-only median/mode plus an explicit `*_missing` flag — new
+  concept logged in `docs/concepts_log.md`.
+- Match rate to a t-1 profile row was 100% (expected — same source table as
+  the label build, so any row with a defined label already has a matching
+  profile row). Output: `data/processed/features_tenure_activity.csv`
+  (12,682,421 rows, gitignored).
+- Sanity-checked the engineered features against the adoption label in a new
+  notebook, `notebooks/02_feature_check_group1.ipynb` (train split only):
+  both `activity_index` (0.03% inactive vs. 1.18% active) and `tenure_months`
+  buckets (0.11% → 1.27%, monotonic) reproduce the same signal the Phase 1
+  EDA found on the raw columns, confirming cleaning/imputation didn't wash
+  it out. Notable side-finding: the 0.16% of rows that got an imputed value
+  adopt at 0.054% vs. 0.570% for normal rows — real and meaningfully lower,
+  which validates keeping `tenure_missing`/`activity_missing` as their own
+  features rather than just filling and moving on.
+- Refreshed both `reports/Project_Recap.pdf` and `reports/Technical_Deep_Dive.pdf`
+  (via their generator scripts) to cover the train/val split and this first
+  feature group, so the audience-facing docs aren't stuck at the Phase 1
+  snapshot.
+- Next: Group 2 — product count (how many of the 24 product flags a customer
+  already holds at t-1), following the same script pattern.

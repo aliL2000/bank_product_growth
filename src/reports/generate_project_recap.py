@@ -127,7 +127,7 @@ def build():
     pdf.multi_cell(
         0, 5,
         "Prepared August 2026 - covers sessions from project kickoff through the "
-        "end of Phase 1 (exploratory data analysis)",
+        "early stages of Phase 2 (feature engineering)",
         align="L", new_x="LMARGIN", new_y="NEXT",
     )
     pdf.ln(4)
@@ -441,6 +441,77 @@ def build():
         "reports/01_eda_findings.md and the underlying notebook.",
     )
 
+    # --- Step 7: train/val split ---
+    pdf.add_page()
+    pdf.numbered_step(
+        7,
+        "Split the data by time, so testing honestly reflects the real job",
+        "Before building any model, the data has to be split into a chunk "
+        "it learns from (\"train\") and a chunk used only to check how well "
+        "it actually did (\"validation\"). The obvious approach - shuffle "
+        "all the rows randomly and split - would be a mistake here.",
+    )
+    pdf.callout(
+        "Why not just shuffle and split randomly?",
+        "The same customer shows up in many consecutive months, and their "
+        "attributes (tenure, income, activity) barely change month to "
+        "month. A random split could put a customer's March row in "
+        "training and their April row in validation - so the model would "
+        "effectively get a sneak peek at a near-duplicate of the answer "
+        "during training, making it look far more accurate than it will "
+        "ever be once it's scoring genuinely new, future months in real "
+        "use.",
+    )
+    pdf.body(
+        "Instead, the split was made by calendar month: the last 3 months "
+        "of labeled data (March-May 2016) became validation, and every "
+        "earlier month became training - no shuffling, no randomness. This "
+        "mirrors the real situation the model will eventually face: trained "
+        "on the past, judged on how well it predicts a future it hasn't "
+        "seen."
+    )
+
+    # --- Step 8: first feature group ---
+    pdf.add_page()
+    pdf.numbered_step(
+        8,
+        "Started building the model's actual inputs, one group at a time",
+        "With the split in place, the next job is \"feature engineering\": "
+        "turning raw columns into clean, well-behaved inputs a model can "
+        "actually learn from. Rather than doing all of it in one giant "
+        "step, this is being built as a handful of focused groups - the "
+        "first covers tenure (how long someone's been a customer) and "
+        "activity level, the two strongest signals found back in the EDA.",
+    )
+    pdf.body(
+        "This meant fixing two real data-quality issues head-on rather than "
+        "letting them pass through silently: a placeholder value the raw "
+        "data uses for \"tenure unknown\" (a nonsense number, -999999) had "
+        "to be converted to a proper \"missing\" marker, and the small "
+        "number of genuinely missing values (about 0.16% of rows) were "
+        "filled in using a fair, honest method - explained in the callout "
+        "below - rather than just being dropped or guessed at."
+    )
+    pdf.callout(
+        "Filling in missing values without \"cheating\":",
+        "When a value is missing, a common fix is to fill it with a typical "
+        "value - e.g., the median tenure across everyone. But if that "
+        "typical value is computed using validation-month data too, the "
+        "validation set has quietly influenced its own scoring, which is "
+        "the same kind of unfair sneak-peek problem the time-based split "
+        "was built to prevent. So the fill-in value is computed using "
+        "*only* training months, then applied the same way to both "
+        "training and validation rows. A second column also records which "
+        "rows were originally missing, so the model can still tell \"a "
+        "typical customer\" apart from \"we didn't actually know.\"",
+    )
+    pdf.body(
+        "The remaining feature groups planned for this phase - how many "
+        "other products a customer already holds, which channel they joined "
+        "through, and basic demographics like income and customer segment - "
+        "follow the same pattern and are the immediate next step."
+    )
+
     # --- Final page: status + next ---
     pdf.add_page()
     pdf.section_title("Where We Are Now, and What's Next")
@@ -462,24 +533,30 @@ def build():
         "customer segment, with activity level, tenure, and customer segment "
         "standing out as the strongest patterns found so far."
     )
+    pdf.bullet(
+        "The train/validation split is done, split honestly by calendar "
+        "month rather than randomly."
+    )
+    pdf.bullet(
+        "The first feature group (tenure and activity level) is built and "
+        "cleaned; three more groups are planned before the first model gets "
+        "trained."
+    )
     pdf.ln(1)
     pdf.set_font("Helvetica", "B", 11.5)
     pdf.set_text_color(*TEAL)
-    pdf.cell(0, 7, "Phase 1 is complete.", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 7, "Phase 1 is complete. Phase 2 is underway.", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(2)
     pdf.set_font("Helvetica", "B", 12)
     pdf.set_text_color(*TEAL)
     pdf.cell(0, 7, "Next up", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(1)
     pdf.body(
-        "Phase 2: build the first real predictive model. This starts with "
-        "splitting the data by time (train on earlier months, test on later "
-        "ones - not a random split, since randomly mixing months would let "
-        "the model implicitly \"see the future\" during training), then "
-        "engineering features informed by this session's findings (tenure, "
-        "activity level, and customer segment first), then training a "
-        "baseline model and a stronger one (logistic regression and "
-        "LightGBM) to compare against."
+        "Finish feature engineering: how many other products a customer "
+        "already holds, which channel they joined through, and basic "
+        "demographics (income, customer segment). Then train a baseline "
+        "model and a stronger one (logistic regression and LightGBM) and "
+        "compare them."
     )
     pdf.body(
         "After that: explaining what drives the model's predictions in plain "
