@@ -11,8 +11,11 @@ entry to the working log every session, even a short one.
 > the EDA notebook + findings write-up are done (`notebooks/01_eda.ipynb`,
 > `reports/01_eda_findings.md`) — strongest signals found: activity index,
 > tenure, segmento.
-> **Next up:** Phase 2 — time-respecting train/val split, then feature
-> engineering. Full detail is in the Working Log below.
+> **Time-respecting train/val split is done** (`data/processed/train_val_split.csv`,
+> gitignored — rerun `src/features/train_val_split.py` if missing; last 3
+> labeled months as val, see `docs/decisions/002-train-val-split.md`).
+> **Next up:** Phase 2 feature engineering. Full detail is in the Working Log
+> below.
 
 ## Phase 0 — Setup (Week 1)
 - [x] Scaffold repo structure
@@ -31,7 +34,7 @@ entry to the working log every session, even a short one.
 - [x] Write `reports/01_eda_findings.md`
 
 ## Phase 2 — Baseline Model (Weeks 5–7)
-- [ ] Time-respecting train/val split (train on earlier months, validate on later)
+- [x] Time-respecting train/val split (train on earlier months, validate on later)
 - [ ] Feature engineering: tenure, product count, channel activity, demographics
 - [ ] Baseline logistic regression + LightGBM
 - [ ] Evaluate with precision@K / lift over random targeting baseline
@@ -151,3 +154,39 @@ entry to the working log every session, even a short one.
   (activity index, tenure, segmento as priority features; explicit cleaning
   needed for `antiguedad`'s placeholder value and `age`'s outliers; an
   imputation strategy for `renta`).
+
+### 2026-08-11
+- No code changes. Adam wants this project to eventually be a resume bullet
+  section, modeled on an existing 4-bullet project entry from one of his
+  resumes. Drafted a phase-mapped version in `docs/resume_bullets.md` (new
+  living doc, same pattern as `concepts_log.md`) — bullet 1 unlocks at Phase
+  2, full 4-bullet section at Phase 4. Bullets stay `draft` until the phase
+  that makes them true is actually done; numbers get filled from real results
+  at that point, not estimated ahead of time.
+- Next: continue with Phase 2 (time-respecting split, feature engineering) as
+  previously planned. Revisit `docs/resume_bullets.md` when Phase 2 closes
+  out to flip bullet 1 to `verified`.
+
+### 2026-08-13
+- Built the time-respecting train/val split: `src/features/train_val_split.py`
+  reads `adoption_labels_tjcr.csv`, keeps only rows with a defined label (16
+  months, 2015-02 through 2016-05), and tags the last 3 labeled months
+  (2016-03/04/05) as `val`, the other 13 as `train` — no random component,
+  no gap month (each row is already point-in-time correct via the Phase 1
+  t-1 join). Full reasoning, including why this is a period split rather
+  than a customer-holdout split, in `docs/decisions/002-train-val-split.md`;
+  concept logged in `docs/concepts_log.md`.
+- Result: train = 9,913,274 rows / 56,369 adoptions (0.57%); val = 2,769,147
+  rows / 12,749 adoptions (0.46%). Output written to
+  `data/processed/train_val_split.csv` (gitignored, rerun the script if
+  missing).
+- Note: hit a recurring pandas `IndexError` in `_concatenate_chunks` when
+  reading `adoption_labels_tjcr.csv` without explicit `dtype=` on every
+  `usecols` column (including the boolean-as-string `adoption`/`label_defined`
+  columns) — fixed by declaring dtypes for all loaded columns rather than
+  letting pandas infer them. Worth remembering if this file is read again
+  without full dtypes specified.
+- Next: Phase 2 feature engineering — tenure, product count, channel
+  activity, demographics — joined against `train_val_split.csv`, built from
+  train-only statistics where any aggregation is involved (per the caveat in
+  `docs/decisions/002-train-val-split.md`).
