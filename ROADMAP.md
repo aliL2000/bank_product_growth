@@ -14,8 +14,10 @@ entry to the working log every session, even a short one.
 > **Time-respecting train/val split is done** (`data/processed/train_val_split.csv`,
 > gitignored — rerun `src/features/train_val_split.py` if missing; last 3
 > labeled months as val, see `docs/decisions/002-train-val-split.md`).
-> **Next up:** Phase 2 feature engineering. Full detail is in the Working Log
-> below.
+> **Phase 2 feature engineering in progress:** Group 1 (tenure/activity) and
+> Group 2 (product count) done — product count is the strongest signal found
+> so far (~0.13 correlation, ~60x lift). **Next up:** Group 3 (demographics:
+> income, age, sex, segmento). Full detail is in the Working Log below.
 
 ## Phase 0 — Setup (Week 1)
 - [x] Scaffold repo structure
@@ -219,3 +221,30 @@ entry to the working log every session, even a short one.
   snapshot.
 - Next: Group 2 — product count (how many of the 24 product flags a customer
   already holds at t-1), following the same script pattern.
+
+### 2026-09-11
+- Built the second Phase 2 feature group — product count — in
+  `src/features/build_features_product_count.py`, following Group 1's
+  pattern: joins `train_val_split.csv` to each customer's product flags at
+  month *t-1* and sums 23 of the 24 `ind_*_ult1` flags into
+  `product_count_prev`. Deliberately excludes the target column
+  (`ind_tjcr_fin_ult1`) from the sum, since eligibility already forces it to
+  0 for the rows that matter — including it would just re-encode the label
+  rather than add signal. New concept (aggregating many raw columns into
+  one derived feature) logged in `docs/concepts_log.md`.
+- Found and handled a real data quirk: `ind_nomina_ult1`/`ind_nom_pens_ult1`
+  (payroll, payroll pension) are missing for 16,063 rows each (0.12%) —
+  filled with 0 rather than adding a per-column missing flag, since the
+  effect on a 23-column sum is negligible. Match rate to a t-1 profile row
+  was 100%, same as Group 1.
+- Sanity-checked in a new notebook, `notebooks/03_feature_check_group2.ipynb`
+  (train split only): **product_count_prev is the strongest signal found so
+  far in this project** — adoption rate climbs from ~0.07% (0 other
+  products) to ~4.3% (6+ products), a ~60x lift, with a point-biserial
+  correlation (~0.13) noticeably higher than Group 1's tenure (~0.05) or
+  activity index (~0.08). Flagged a caveat to revisit in Phase 3: product
+  count likely correlates with tenure (both accumulate over time), so their
+  individual lifts aren't necessarily additive once combined in a model.
+- Next: Group 3 — demographics (income, age, sex, segmento), including a
+  decision on the `renta` imputation strategy (~20% missing) and cleaning
+  the implausible `age` outliers (>100) found in Phase 1 EDA.

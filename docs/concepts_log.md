@@ -208,3 +208,39 @@ habit. Also, a median/mode fit on train can technically fall outside the
 range seen in val (e.g. if val's true distribution has shifted, which the
 EDA already showed for tenure/activity over time) — that's expected and
 correct, not a bug to "fix" by refitting on val.
+
+### 2026-09-11 — Aggregating multiple raw columns into one derived feature
+
+**Concept**: Building a single engineered feature (`product_count_prev`) by
+summing across many raw columns (23 of the 24 `ind_*_ult1` product flags),
+rather than feeding each flag into the model individually.
+
+**Why here**: Feeding 23 separate binary flags into a model is possible, but
+each one alone is a weak, sparse signal (most customers hold 0-2 of any
+given product). Collapsing them into a single count turns 23 sparse columns
+into one dense, easily-interpreted number — "how engaged is this customer
+with the bank overall" — and, as the Group 2 feature check notebook
+(`notebooks/03_feature_check_group2.ipynb`) showed, that single number
+carries the strongest signal found in the project so far (~0.13
+point-biserial correlation with adoption, vs. ~0.05-0.08 for Group 1's
+tenure/activity features): adoption rate climbs from ~0.07% at 0 other
+products to ~4.3% at 6+, a ~60x range.
+
+**How it works**: `df[product_cols].sum(axis=1)` adds across columns (not
+rows) for each customer-month, producing one integer per row — same
+point-in-time (t-1) join as every other Phase 2 feature, then a row-wise
+`.sum(axis=1)` instead of any single-column transform. The target product
+itself (`ind_tjcr_fin_ult1`) is excluded from the sum on purpose: since
+eligibility for the label requires *not* holding it at t-1, including it in
+the count would either always add 0 (for eligible rows) or trivially
+determine the label for already-holder rows in the split — neither adds
+real information, so it's left out to keep the feature about *other*
+engagement.
+
+**Watch out for**: aggregating away detail like this trades interpretability
+of *which* product for a cleaner overall signal — you lose the ability to
+say "holding a mortgage specifically predicts X" once it's folded into one
+count. Also, a sum like this can end up correlated with other features built
+the same way (tenure accumulates products over time too), which matters for
+Phase 3 explainability — a strong individual correlation doesn't mean
+independent predictive value once features are combined in a model.
