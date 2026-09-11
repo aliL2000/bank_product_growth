@@ -14,10 +14,14 @@ entry to the working log every session, even a short one.
 > **Time-respecting train/val split is done** (`data/processed/train_val_split.csv`,
 > gitignored — rerun `src/features/train_val_split.py` if missing; last 3
 > labeled months as val, see `docs/decisions/002-train-val-split.md`).
-> **Phase 2 feature engineering in progress:** Group 1 (tenure/activity) and
-> Group 2 (product count) done — product count is the strongest signal found
-> so far (~0.13 correlation, ~60x lift). **Next up:** Group 3 (demographics:
-> income, age, sex, segmento). Full detail is in the Working Log below.
+> **Phase 2 feature engineering: Groups 1-3 done** — tenure/activity, product
+> count (strongest signal so far, ~0.13 correlation), and demographics
+> (age/sex/segmento/income) are all built and sanity-checked.
+> `canal_entrada` (162-category channel column) is deliberately deferred,
+> not built — revisit only if baseline model evaluation suggests it's
+> needed. **Next up:** assemble train.csv/val.csv from the split + all
+> three feature files + label, then baseline logistic regression +
+> LightGBM. Full detail is in the Working Log below.
 
 ## Phase 0 — Setup (Week 1)
 - [x] Scaffold repo structure
@@ -37,7 +41,8 @@ entry to the working log every session, even a short one.
 
 ## Phase 2 — Baseline Model (Weeks 5–7)
 - [x] Time-respecting train/val split (train on earlier months, validate on later)
-- [ ] Feature engineering: tenure, product count, channel activity, demographics
+- [x] Feature engineering: tenure, activity index, product count, demographics
+      (channel/`canal_entrada` deliberately deferred — see status block)
 - [ ] Baseline logistic regression + LightGBM
 - [ ] Evaluate with precision@K / lift over random targeting baseline
 - [ ] Write `reports/02_baseline_model.md`
@@ -248,3 +253,40 @@ entry to the working log every session, even a short one.
 - Next: Group 3 — demographics (income, age, sex, segmento), including a
   decision on the `renta` imputation strategy (~20% missing) and cleaning
   the implausible `age` outliers (>100) found in Phase 1 EDA.
+
+### 2026-09-11 (cont'd)
+- Built Group 3 — demographics — in `src/features/build_features_demographics.py`.
+  Explored raw distributions first (age, sexo, segmento, renta) to make
+  informed cleaning decisions rather than defaulting to Group 1's pattern:
+  - `age`: only values >100 (12,869 rows, clearly implausible — raw max was
+    164) become NaN + train-only median imputed; ages <15 left alone since
+    Spain's custodial "junior" accounts make young holders real data.
+  - `sexo`/`segmento`: one-hot encoded + `*_missing` flags.
+  - `renta` (income, ~20% missing): imputed with a **train-only median
+    grouped by segmento** (€89k-142k range across segments) rather than one
+    flat global median — a step up from Group 1's plain global-median
+    approach, with a global-median fallback for the ~1.4% of rows where
+    segmento itself is missing. Also added `renta_log` (log1p transform)
+    since raw income is heavily right-skewed (mean ~€135k vs. median
+    ~€102k, max ~€29M) — needed for the upcoming logistic regression
+    baseline. Both new concepts (group-wise imputation, log-transforming a
+    skewed feature) logged in `docs/concepts_log.md`.
+- Sanity-checked in `notebooks/04_feature_check_group3.ipynb` (train split
+  only): all four features reproduce their Phase 1 raw-column findings —
+  segmento remains the strongest of the group (top 2.43% vs. universitario
+  0.097%, ~25x, close to Phase 1's >30x), age peaks in middle age, sex shows
+  the expected small gap. Confirmed the log-transform empirically:
+  `renta_log`'s correlation with adoption (~0.022) is 2.6x
+  `renta_imputed`'s (~0.008). None individually rival Group 2's product
+  count (~0.13) — demographics are real but comparatively weak predictors,
+  consistent with Phase 1's "weaker but real" framing. Output:
+  `data/processed/features_demographics.csv` (12,682,421 rows, gitignored).
+- Decided: `canal_entrada` (channel of entry, 162 categories) is
+  deliberately deferred rather than built as a Group 4 — the standard ML
+  workflow is baseline-first, then decide what's worth adding based on
+  evaluation results, not perfect the feature set before ever training a
+  model. Revisit only if precision@K or feature importance later suggests
+  it's needed. **Phase 2 feature engineering is done** (Groups 1-3).
+- Next: assemble `train_val_split.csv` + all three feature-group files +
+  the label into a single `train.csv`/`val.csv`, then baseline logistic
+  regression + LightGBM, evaluated with precision@K vs. random targeting.

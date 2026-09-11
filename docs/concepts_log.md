@@ -244,3 +244,62 @@ count. Also, a sum like this can end up correlated with other features built
 the same way (tenure accumulates products over time too), which matters for
 Phase 3 explainability — a strong individual correlation doesn't mean
 independent predictive value once features are combined in a model.
+
+### 2026-09-11 — Group-wise imputation
+
+**Concept**: Filling missing values with a statistic computed *per category*
+(e.g. per `segmento`) instead of one single constant for the whole dataset.
+
+**Why here**: `renta` (income) is ~20% missing, and income genuinely varies
+by customer segment — the train-only median is ~€89k for UNIVERSITARIO vs.
+~€142k for TOP, a 1.6x spread. A single global median (~€102k) papers over
+that difference, silently pulling every imputed UNIVERSITARIO row's income
+up and every imputed TOP row's down. Since `segmento` is already being
+built as a feature in this same group, grouping the imputation by it costs
+nothing extra to compute.
+
+**How it works**: `df.loc[train_mask].groupby("segmento")["renta"].median()`
+computes one median per segment, using train rows only (same leakage rule
+as every other imputation in this project). Each row then looks up its own
+segment's median via `.map()`. Rows whose segment is itself missing (~1.4%)
+have nothing to look up, so they fall back to the plain global train
+median — a two-level fallback (group median, then global median) rather
+than leaving those few rows unimputed.
+
+**Watch out for**: this only helps when the grouping column is itself
+reliable and mostly non-missing — grouping by a column that's 50% missing
+just pushes half the problem into the fallback anyway. Also, more groups
+means fewer rows per group; with a 3-category column like `segmento` each
+group still has millions of rows, but a group-wise median computed on a
+rare category (say, a few hundred rows) can be unstable — worth checking
+group sizes before trusting a group's median.
+
+### 2026-09-11 — Log-transforming a skewed numeric feature
+
+**Concept**: Replacing a right-skewed numeric column with `log1p(x)`
+(`log(1 + x)`, which handles zero cleanly) before feeding it to a model.
+
+**Why here**: `renta` ranges from ~€1.2k to ~€29M, with the mean (~€135k)
+well above the median (~€102k) — a small number of very high earners
+stretch the distribution out. A plain logistic regression fits one linear
+coefficient per feature, so a handful of €10M+ rows can dominate that
+coefficient and drown out the meaningful variation in the €50k-200k range
+where almost everyone actually falls. Confirmed empirically, not just in
+theory: `renta_log`'s correlation with adoption (~0.022) came out 2.6x
+`renta_imputed`'s (~0.008) in the Group 3 feature-check notebook.
+
+**How it works**: `np.log1p(x)` compresses large values much more than
+small ones (the gap between €1M and €2M shrinks a lot more than the gap
+between €10k and €20k), which pulls extreme outliers back toward the bulk
+of the distribution instead of letting them dominate. The `+1` inside
+`log1p` (vs. plain `log`) just avoids `log(0)` being undefined, which
+doesn't matter much here since no customer has exactly €0 income, but it's
+a defensive habit worth keeping.
+
+**Watch out for**: this transform matters for linear models (logistic
+regression) but is close to irrelevant for tree-based models like LightGBM,
+since trees split on thresholds and are invariant to any monotonic
+transform of a feature — `renta_imputed` and `renta_log` would produce
+nearly identical trees. Keeping both columns means each model gets the
+version suited to it, rather than guessing which one baseline modeling will
+prefer.
