@@ -303,3 +303,41 @@ transform of a feature — `renta_imputed` and `renta_log` would produce
 nearly identical trees. Keeping both columns means each model gets the
 version suited to it, rather than guessing which one baseline modeling will
 prefer.
+
+### 2026-09-11 — Eligibility / population definition in a propensity model
+
+**Concept**: Before splitting into train/val or building features, restrict
+the modeling population to rows where the outcome was actually *possible* —
+here, customers who did **not** already hold a credit card at t-1. This is
+a different check from label leakage (features/labels using future
+information) — it's about whether a row belongs in the dataset at all.
+
+**Why here**: `/audit` found that `train_val_split.py` was keeping every
+row with a defined label, including 570,732 rows (4.5%) where the customer
+already held a credit card at t-1. For those, `adoption` is `False` purely
+because they already have the product, not because they were offered it
+and declined — a structurally different kind of "no" than the one the
+model is supposed to learn to predict. Worse, the three feature-check
+notebooks were computing their correlation numbers over this uncorrected
+population, so the contamination was already shaping which features looked
+strongest.
+
+**How it works**: `train_val_split.py` now loads `prev_flag` alongside
+`label_defined` and filters to `label_defined & (prev_flag == 0)` before
+assigning `train`/`val` — dropping the split from 12,682,421 to 12,111,689
+rows (exactly the eligible-non-holder count Phase 1 had already computed
+back on 2026-08-02). Filtering once at the split stage means every
+downstream feature file inherits the correct population automatically,
+rather than needing the same filter repeated in each feature script.
+Full reasoning in `docs/decisions/003-eligibility-filter.md`.
+
+**Watch out for**: after rebuilding the split and all three feature files
+and re-running the sanity-check notebooks, the numbers moved — not just
+noise. `product_count_prev`'s correlation with adoption rose from ~0.13 to
+~0.163 (tenure/activity/demographics moved only slightly: ~0.05→0.059,
+~0.08→0.083, age ~0.033→0.035). The contaminated already-holder rows were
+*diluting* product_count's true signal (those rows have high product
+counts but a label that's trivially `False`, weakening the correlation) —
+a useful reminder that population contamination doesn't always inflate a
+metric; it can just as easily mask a real effect. Feature ranking order
+was unchanged, but the magnitude wasn't safe to assume.

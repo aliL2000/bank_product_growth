@@ -15,13 +15,17 @@ entry to the working log every session, even a short one.
 > gitignored — rerun `src/features/train_val_split.py` if missing; last 3
 > labeled months as val, see `docs/decisions/002-train-val-split.md`).
 > **Phase 2 feature engineering: Groups 1-3 done** — tenure/activity, product
-> count (strongest signal so far, ~0.13 correlation), and demographics
+> count (strongest signal, ~0.163 correlation), and demographics
 > (age/sex/segmento/income) are all built and sanity-checked.
 > `canal_entrada` (162-category channel column) is deliberately deferred,
 > not built — revisit only if baseline model evaluation suggests it's
-> needed. **Next up:** assemble train.csv/val.csv from the split + all
-> three feature files + label, then baseline logistic regression +
-> LightGBM. Full detail is in the Working Log below.
+> needed. **Modeling population is now restricted to eligible non-holders**
+> (`prev_flag == 0`) — split and all three feature files were rebuilt after
+> `/audit` found already-holders contaminating the negative class (see
+> `docs/decisions/003-eligibility-filter.md`). **Next up:** assemble
+> train.csv/val.csv from the split + all three feature files + label, then
+> baseline logistic regression + LightGBM. Full detail is in the Working
+> Log below.
 
 ## Phase 0 — Setup (Week 1)
 - [x] Scaffold repo structure
@@ -290,3 +294,35 @@ entry to the working log every session, even a short one.
 - Next: assemble `train_val_split.csv` + all three feature-group files +
   the label into a single `train.csv`/`val.csv`, then baseline logistic
   regression + LightGBM, evaluated with precision@K vs. random targeting.
+
+### 2026-09-11 (cont'd 2) — /audit fix: eligibility filter
+
+- Ran `/audit` for the first time via the new skill. Top finding: the
+  train/val split kept 570,732 rows (4.5%) where the customer already held
+  a credit card at t-1 — their `adoption` is trivially `False`, not a real
+  "chose not to adopt," and the three feature-check notebooks' correlation
+  numbers (including the "strongest signal so far" claim above) were
+  already computed on this contaminated population. Full findings in
+  `docs/audit_log.md`.
+- Fixed at the split stage: `src/features/train_val_split.py` now filters
+  to `label_defined & (prev_flag == 0)` before assigning train/val — see
+  `docs/decisions/003-eligibility-filter.md`. Split drops from 12,682,421
+  to 12,111,689 rows (exactly Phase 1's eligible-non-holder count from
+  2026-08-02). Rebuilt all three Phase 2 feature files against the
+  corrected split, then re-ran `notebooks/02-04_feature_check_group*.ipynb`
+  to get honest numbers.
+- Numbers moved, not just noise: `product_count_prev`'s correlation with
+  adoption rose from ~0.13 to **~0.163** (the contaminated rows were
+  *diluting* its signal, not inflating it — those rows have high product
+  counts but a trivially-False label). Group 1 and demographics moved only
+  slightly (tenure ~0.05→0.059, activity ~0.08→0.083, age ~0.033→0.035).
+  Feature ranking order unchanged; magnitude wasn't safe to assume. New
+  concept (eligibility/population definition) logged in
+  `docs/concepts_log.md`.
+- Other `/audit` findings (no baseline model yet, no held-out test set, no
+  merge-safety tests, CSV intermediates, env pinning, eyeballed cutoffs,
+  docs-outpacing-modeling, and a correlation-vs-nonmonotonic-feature issue
+  with `age`) left open for now — not addressed this session, tracked in
+  `docs/audit_log.md`.
+- Next: assemble `train.csv`/`val.csv` from the corrected split + three
+  feature files + label, then baseline logistic regression + LightGBM.
