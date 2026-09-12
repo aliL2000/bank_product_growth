@@ -4,6 +4,9 @@ Validation = the last 3 labeled months (2016-03, 2016-04, 2016-05); train =
 every earlier labeled month (2015-02 through 2016-02). Rows with no defined
 label (2015-01, and later gap rows for customers with no prior-month row) are
 dropped here since they can't be used for either training or evaluation.
+Rows where the customer already held a credit card at t-1 are also dropped
+here - see docs/decisions/003-eligibility-filter.md for why the modeling
+population is restricted to eligible non-holders.
 
 See docs/concepts_log.md for why this is a period-based split (not a
 customer-holdout split) and why no gap month is needed between train and val.
@@ -21,19 +24,28 @@ VAL_MONTHS = {"2016-03", "2016-04", "2016-05"}
 
 
 def load_labeled() -> pd.DataFrame:
-    """Load only the labeled (usable) rows, with memory-light dtypes."""
+    """Load only the labeled, eligible rows, with memory-light dtypes.
+
+    Eligible = label_defined (had a prior-month row) AND prev_flag == 0
+    (didn't already hold a credit card at t-1). Excluding already-holders
+    keeps the negative class meaning "chose not to adopt" rather than
+    "structurally couldn't" - see docs/decisions/003-eligibility-filter.md.
+    """
     df = pd.read_csv(
         LABELS_PATH,
-        usecols=["ncodpers", "fecha_dato", "month", "label_defined", "adoption"],
+        usecols=["ncodpers", "fecha_dato", "month", "prev_flag", "label_defined", "adoption"],
         dtype={
             "ncodpers": "int32",
             "fecha_dato": "str",
             "month": "str",
+            "prev_flag": "float32",
             "label_defined": "bool",
             "adoption": "str",
         },
     )
-    return df[df["label_defined"]].copy()
+    already_holder = (df["prev_flag"] == 1).sum()
+    print(f"dropping {already_holder} already-holder rows (prev_flag == 1) before split")
+    return df[df["label_defined"] & (df["prev_flag"] == 0)].copy()
 
 
 def build_split(labeled: pd.DataFrame) -> pd.DataFrame:
