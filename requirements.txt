@@ -8,3 +8,5 @@ shap
 jupyter
 streamlit
 fpdf2
+pyarrow
+pytest
