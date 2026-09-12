@@ -9,6 +9,7 @@ data/processed/*
 *.zip
 __pycache__/
 *.pyc
+.pytest_cache/
 .ipynb_checkpoints/
 .venv/
 venv/
