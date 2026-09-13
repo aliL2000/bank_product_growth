@@ -6,12 +6,12 @@ entry to the working log every session, even a short one.
 > **Status at a glance (update this block every session — keep it to ~5 lines):**
 > **Phase 1 is complete.** Service A is decided (credit card,
 > `ind_tjcr_fin_ult1`; see `docs/decisions/001-service-a-product-choice.md`),
-> the adoption label is built (`data/processed/adoption_labels_tjcr.csv`,
+> the adoption label is built (`data/processed/adoption_labels_tjcr.parquet`,
 > gitignored — rerun `src/features/build_adoption_label.py` if missing), and
 > the EDA notebook + findings write-up are done (`notebooks/01_eda.ipynb`,
 > `reports/01_eda_findings.md`) — strongest signals found: activity index,
 > tenure, segmento.
-> **Time-respecting train/val split is done** (`data/processed/train_val_split.csv`,
+> **Time-respecting train/val split is done** (`data/processed/train_val_split.parquet`,
 > gitignored — rerun `src/features/train_val_split.py` if missing; last 3
 > labeled months as val, see `docs/decisions/002-train-val-split.md`).
 > **Phase 2 feature engineering: Groups 1-3 done** — tenure/activity, product
@@ -22,7 +22,10 @@ entry to the working log every session, even a short one.
 > needed. **Modeling population is now restricted to eligible non-holders**
 > (`prev_flag == 0`) — split and all three feature files were rebuilt after
 > `/audit` found already-holders contaminating the negative class (see
-> `docs/decisions/003-eligibility-filter.md`). **Next up:** assemble
+> `docs/decisions/003-eligibility-filter.md`). **All `data/processed/`
+> intermediates are now Parquet** (~7x smaller than the old CSVs), and a
+> `tests/` suite (12 pytest tests, runnable from VSCode's Test Explorer)
+> covers the label-merge and feature-join logic. **Next up:** assemble
 > train.csv/val.csv from the split + all three feature files + label, then
 > baseline logistic regression + LightGBM. Full detail is in the Working
 > Log below.
@@ -326,3 +329,49 @@ entry to the working log every session, even a short one.
   `docs/audit_log.md`.
 - Next: assemble `train.csv`/`val.csv` from the corrected split + three
   feature files + label, then baseline logistic regression + LightGBM.
+
+### 2026-09-12 — Parquet migration + first tests, addressing two open /audit findings
+
+- Discussed the open `/audit` findings before starting new modeling work.
+  Found `docs/audit_log.md` itself was stale: [contaminated-negative-class]
+  and [stale-correlation-numbers-already-contaminated] were already fixed
+  by the 2026-09-11 eligibility-filter session but still marked STILL OPEN
+  in the log (the fix happened after that audit entry was written) — logged
+  a dated correction rather than re-doing the fix.
+- Migrated all five `data/processed/` intermediates from CSV to Parquet
+  (`adoption_labels_tjcr`, `train_val_split`, `features_tenure_activity`,
+  `features_product_count`, `features_demographics`) — addresses
+  [csv-intermediate-files]. Updated all five `src/features/*.py` build
+  scripts and all four notebooks (`01_eda` through
+  `04_feature_check_group3`) to read/write Parquet; dropped the
+  `dtype=`/`parse_dates=` workarounds these reads used to need, since
+  Parquet preserves dtypes (including pandas `Period[M]` and nullable
+  `boolean`, confirmed with a round-trip test first). Re-ran the full
+  pipeline and re-executed all four notebooks end to end — every number
+  reproduced exactly (e.g. `product_count_prev` correlation: 0.163054
+  before and after). `data/processed/` dropped from ~2.9 GB to ~395 MB.
+  Deleted the old CSVs. New concept logged in `docs/concepts_log.md`.
+- Added `pytest` + a `tests/` directory (12 tests) covering
+  `build_adoption_label.py`'s `build_label()` (adoption, already-holder,
+  non-adoption, undefined-label, and gap-month scenarios on synthetic data)
+  and each feature script's `attach_profile()` t-1 join — addresses
+  [no-tests-on-label-logic] (partially: still no CI, tests are run
+  manually). Also added a runtime `assert len(merged) == len(input)` right
+  after the merge in `build_label()` and each `attach_profile()`, so a
+  future regression fails loudly during a real run, not just in a test.
+  Added `pytest.ini` (`pythonpath = src`) and `.vscode/settings.json`
+  (`python.testing.pytestEnabled`) so VSCode's built-in Test Explorer
+  discovers and runs these directly. New concept logged in
+  `docs/concepts_log.md`.
+- Updated `docs/audit_log.md` with a 2026-09-12 status entry marking
+  [contaminated-negative-class], [stale-correlation-numbers-already-contaminated],
+  and [csv-intermediate-files] RESOLVED, and [no-tests-on-label-logic]
+  PARTIALLY ADDRESSED. Still open: [no-baseline-model-yet],
+  [no-held-out-test-set], [env-reproducibility], [eyeballed-cutoffs],
+  [docs-outpacing-modeling], [correlation-yardstick-vs-nonmonotonic-feature].
+- Next: still assemble `train.csv`/`val.csv` from the split + three feature
+  files + label, then baseline logistic regression + LightGBM. Before that
+  (per this session's discussion), consider a 3-way split (add a held-out
+  test period) so the eventual baseline number isn't the same one used for
+  model selection — addresses [no-held-out-test-set], the other flagged
+  priority item.

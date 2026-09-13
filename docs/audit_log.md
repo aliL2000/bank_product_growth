@@ -124,3 +124,33 @@ trained, and the one number currently being used to judge which features
 matter (product_count's ~0.13 correlation) is itself computed on a
 provably contaminated train slice — that combination is the priority risk
 right now, ahead of any single carried-over item.
+
+### 2026-09-12 — status update (no new /audit run; fixes made in a normal session)
+
+1. **[contaminated-negative-class] — RESOLVED**, as of the 2026-09-11
+   "cont'd 2" session (this update was just late to be logged here):
+   `train_val_split.py` now filters to `label_defined & (prev_flag == 0)`
+   before assigning train/val. See `docs/decisions/003-eligibility-filter.md`.
+2. **[stale-correlation-numbers-already-contaminated] — RESOLVED** as a
+   direct consequence of #1: all three feature files and their sanity-check
+   notebooks were rebuilt against the corrected split.
+3. **[csv-intermediate-files] — RESOLVED.** All five `data/processed/`
+   intermediates migrated from CSV to Parquet (`adoption_labels_tjcr`,
+   `train_val_split`, and the three `features_*` files). `data/processed/`
+   dropped from ~2.9 GB to ~395 MB (~7x). All five build scripts and all
+   four notebooks (`01_eda` through `04_feature_check_group3`) updated to
+   read/write Parquet and re-executed to confirm identical results (e.g.
+   `product_count_prev`'s correlation reproduced exactly: 0.163054 before
+   and after). New concept logged in `docs/concepts_log.md`.
+4. **[no-tests-on-label-logic] — PARTIALLY ADDRESSED.** Added `pytest` +
+   `tests/` (12 tests) covering `build_label()`'s core scenarios and each
+   feature script's t-1 join, plus a runtime `assert len(merged) ==
+   len(input)` in `build_label()` and each `attach_profile()` right after
+   the merge. Not addressed: no CI wiring to run these automatically (still
+   manual, via VSCode's Test Explorer or `pytest` in a terminal) - see
+   [env-reproducibility] below, which is the more general version of that
+   gap.
+
+**Still open, unchanged**: [no-baseline-model-yet], [no-held-out-test-set],
+[env-reproducibility], [eyeballed-cutoffs] (partially mitigated),
+[docs-outpacing-modeling], [correlation-yardstick-vs-nonmonotonic-feature].

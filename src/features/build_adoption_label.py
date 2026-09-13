@@ -13,7 +13,7 @@ import pandas as pd
 RAW_DIR = Path(__file__).resolve().parents[2] / "data" / "raw"
 PROCESSED_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 TRAIN_PATH = RAW_DIR / "train_ver2.csv"
-OUTPUT_PATH = PROCESSED_DIR / "adoption_labels_tjcr.csv"
+OUTPUT_PATH = PROCESSED_DIR / "adoption_labels_tjcr.parquet"
 
 TARGET_COL = "ind_tjcr_fin_ult1"
 
@@ -47,6 +47,10 @@ def build_label(df: pd.DataFrame) -> pd.DataFrame:
         left_on=["ncodpers", "prev_month"],
         right_on=["ncodpers", "lookup_month"],
         how="left",
+    )
+    assert len(merged) == len(df), (
+        f"left join changed row count ({len(df)} -> {len(merged)}) - "
+        "lookup must have at most one row per (ncodpers, month)"
     )
 
     merged["label_defined"] = merged["prev_flag"].notna()
@@ -86,5 +90,5 @@ if __name__ == "__main__":
     labeled = build_label(slim)
     summarize(labeled)
 
-    labeled.to_csv(OUTPUT_PATH, index=False)
+    labeled.to_parquet(OUTPUT_PATH, index=False)
     print(f"\nwrote {len(labeled)} rows to {OUTPUT_PATH}")

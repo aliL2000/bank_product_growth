@@ -26,8 +26,8 @@ import pandas as pd
 RAW_DIR = Path(__file__).resolve().parents[2] / "data" / "raw"
 PROCESSED_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 TRAIN_PATH = RAW_DIR / "train_ver2.csv"
-SPLIT_PATH = PROCESSED_DIR / "train_val_split.csv"
-OUTPUT_PATH = PROCESSED_DIR / "features_product_count.csv"
+SPLIT_PATH = PROCESSED_DIR / "train_val_split.parquet"
+OUTPUT_PATH = PROCESSED_DIR / "features_product_count.parquet"
 
 TARGET_COL = "ind_tjcr_fin_ult1"
 ALL_PRODUCT_COLS = [
@@ -45,12 +45,8 @@ COUNT_COLS = [c for c in ALL_PRODUCT_COLS if c != TARGET_COL]
 
 def load_split() -> pd.DataFrame:
     """Load the labeled split, deriving month/prev_month from fecha_dato
-    (train_val_split.csv doesn't carry a separate month column)."""
-    df = pd.read_csv(
-        SPLIT_PATH,
-        dtype={"ncodpers": "int32", "split": "category"},
-        parse_dates=["fecha_dato"],
-    )
+    (train_val_split.parquet doesn't carry a separate month column)."""
+    df = pd.read_parquet(SPLIT_PATH)
     df["month"] = df["fecha_dato"].dt.to_period("M")
     df["prev_month"] = df["month"] - 1
     return df
@@ -74,6 +70,10 @@ def attach_profile(split_df: pd.DataFrame, profile: pd.DataFrame) -> pd.DataFram
         left_on=["ncodpers", "prev_month"],
         right_on=["ncodpers", "profile_month"],
         how="left",
+    )
+    assert len(merged) == len(split_df), (
+        f"left join changed row count ({len(split_df)} -> {len(merged)}) - "
+        "profile must have at most one row per (ncodpers, month)"
     )
     matched = merged["profile_month"].notna().mean()
     print(f"rows matched to a t-1 profile row: {matched:.2%}")
@@ -108,5 +108,5 @@ if __name__ == "__main__":
     summarize(features)
 
     out = features[["ncodpers", "fecha_dato", "split", "product_count_prev", "product_count_missing"]]
-    out.to_csv(OUTPUT_PATH, index=False)
+    out.to_parquet(OUTPUT_PATH, index=False)
     print(f"\nwrote {len(out)} rows to {OUTPUT_PATH}")

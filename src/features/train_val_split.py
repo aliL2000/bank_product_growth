@@ -17,31 +17,27 @@ from pathlib import Path
 import pandas as pd
 
 PROCESSED_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
-LABELS_PATH = PROCESSED_DIR / "adoption_labels_tjcr.csv"
-OUTPUT_PATH = PROCESSED_DIR / "train_val_split.csv"
+LABELS_PATH = PROCESSED_DIR / "adoption_labels_tjcr.parquet"
+OUTPUT_PATH = PROCESSED_DIR / "train_val_split.parquet"
 
 VAL_MONTHS = {"2016-03", "2016-04", "2016-05"}
 
 
 def load_labeled() -> pd.DataFrame:
-    """Load only the labeled, eligible rows, with memory-light dtypes.
+    """Load only the labeled, eligible rows.
 
     Eligible = label_defined (had a prior-month row) AND prev_flag == 0
     (didn't already hold a credit card at t-1). Excluding already-holders
     keeps the negative class meaning "chose not to adopt" rather than
     "structurally couldn't" - see docs/decisions/003-eligibility-filter.md.
+
+    Parquet preserves each column's dtype natively, so unlike the old CSV
+    read there's no dtype= dict to maintain by hand here (see
+    docs/concepts_log.md's Parquet entry).
     """
-    df = pd.read_csv(
+    df = pd.read_parquet(
         LABELS_PATH,
-        usecols=["ncodpers", "fecha_dato", "month", "prev_flag", "label_defined", "adoption"],
-        dtype={
-            "ncodpers": "int32",
-            "fecha_dato": "str",
-            "month": "str",
-            "prev_flag": "float32",
-            "label_defined": "bool",
-            "adoption": "str",
-        },
+        columns=["ncodpers", "fecha_dato", "month", "prev_flag", "label_defined", "adoption"],
     )
     already_holder = (df["prev_flag"] == 1).sum()
     print(f"dropping {already_holder} already-holder rows (prev_flag == 1) before split")
@@ -49,13 +45,14 @@ def load_labeled() -> pd.DataFrame:
 
 
 def build_split(labeled: pd.DataFrame) -> pd.DataFrame:
-    labeled["split"] = labeled["month"].apply(lambda m: "val" if m in VAL_MONTHS else "train")
+    labeled["split"] = labeled["month"].astype(str).apply(
+        lambda m: "val" if m in VAL_MONTHS else "train"
+    )
     return labeled[["ncodpers", "fecha_dato", "split"]]
 
 
 def summarize(labeled: pd.DataFrame) -> None:
     labeled = labeled.copy()
-    labeled["adoption"] = labeled["adoption"] == "True"
 
     by_split = labeled.groupby("split")["adoption"].agg(["size", "sum"])
     by_split["rate_pct"] = 100 * by_split["sum"] / by_split["size"]
@@ -72,5 +69,5 @@ if __name__ == "__main__":
     split_df = build_split(labeled)
     summarize(labeled)
 
-    split_df.to_csv(OUTPUT_PATH, index=False)
+    split_df.to_parquet(OUTPUT_PATH, index=False)
     print(f"\nwrote {len(split_df)} rows to {OUTPUT_PATH}")

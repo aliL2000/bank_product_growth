@@ -341,3 +341,74 @@ counts but a label that's trivially `False`, weakening the correlation) —
 a useful reminder that population contamination doesn't always inflate a
 metric; it can just as easily mask a real effect. Feature ranking order
 was unchanged, but the magnitude wasn't safe to assume.
+
+### 2026-09-12 — Columnar file formats (Parquet vs. CSV)
+
+**Concept**: Parquet is a binary, columnar file format for tabular data —
+each column is stored contiguously with its own dtype metadata, rather than
+CSV's row-by-row plain text where every value is just a string until
+something parses it.
+
+**Why here**: `/audit` flagged the five ~600MB+ CSV intermediates in
+`data/processed/` ([csv-intermediate-files]) as an easy win. Beyond size,
+CSV's lack of stored dtypes was already a real bug source — the pandas
+`IndexError` on 2026-08-13 and the awkward `dtype={"adoption": "str"}`
+workaround in `train_val_split.py` both existed only because a boolean
+column written to CSV round-trips as the *text* `"True"`/`"False"`, not an
+actual boolean, unless every dtype is redeclared by hand on read.
+
+**How it works**: `df.to_parquet(path)` / `pd.read_parquet(path)` (via the
+`pyarrow` engine) serialize each column with its real dtype — including
+pandas-specific ones like nullable `boolean` and `Period[M]`, confirmed by a
+round-trip test before migrating any real script. Nothing needs a `dtype=`
+dict on read anymore. Migrating the five build scripts and four notebooks in
+this project shrank `data/processed/` from ~2.9 GB to ~395 MB (about 7x),
+mostly because columnar storage compresses far better than text when many
+values in a column repeat (e.g. a mostly-0/1 flag column, or a `split`
+column with only two distinct values).
+
+**Watch out for**: Parquet isn't human-readable — you can't `head` it in a
+text editor to eyeball a few rows the way you could a CSV; you need pandas
+(or a tool like `parquet-tools`) even for a quick look. It also depends on
+an engine library (`pyarrow` here) being installed, which CSV never needed.
+Kept the raw Kaggle files (`train_ver2.csv`/`test_ver2.csv`) as CSV since
+those are the original source data, not something this project generates —
+only the five derived intermediates were migrated.
+
+### 2026-09-12 — Unit tests and merge-safety assertions
+
+**Concept**: A unit test calls one function with a small, hand-built input
+and asserts the output matches a known-correct expectation — distinct from
+this project's existing sanity-check notebooks, which look for *plausible*
+signal on the real 12M-row data rather than an *exact* known answer on a
+tiny synthetic one. A merge-safety assertion is a runtime `assert` placed
+right after a join, checking an invariant that should always hold (e.g. "a
+left join must not change the row count") so a violation fails loudly at
+run time instead of silently producing a wrong file.
+
+**Why here**: `/audit` called the adoption-label merge "the single point of
+failure for the whole project" with zero automated checks
+([no-tests-on-label-logic]) — before this, only a human eyeballing summary
+stats would catch a broken merge, a flipped comparison, or a future edit
+that reintroduces the eligibility-filter bug from
+`docs/decisions/003-eligibility-filter.md`.
+
+**How it works**: added `pytest` (`requirements.txt`, `pytest.ini` with
+`pythonpath = src` so tests can `import features.build_adoption_label`
+without needing `__init__.py` files) and a `tests/` directory with 12 tests
+covering `build_label()`'s core scenarios (adoption, already-holder,
+non-adoption, undefined label, a gap month) plus the split assignment and
+each feature script's t-1 join. Separately, added an `assert len(merged) ==
+len(input_df)` line directly inside `build_label()` and each feature
+script's `attach_profile()`, right after the merge — this catches a
+regression during a *real* run (e.g. if the raw file ever gains a
+duplicate `(ncodpers, fecha_dato)` row), which a unit test on synthetic
+data can't do since it only exercises hand-built cases.
+
+**Watch out for**: unit tests validate *logic* on cases you thought to
+write, not *signal* on real data — they don't replace the feature-check
+notebooks, which check whether cleaned/imputed features still correlate
+with adoption. Both are needed for different failure modes. Also, an
+`assert` compiled out under Python's `-O` flag is a known footgun in
+general, but not a concern here since these scripts are always run as
+plain `python script.py`, never with `-O`.
