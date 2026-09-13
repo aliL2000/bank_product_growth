@@ -451,3 +451,35 @@ turns test into a second val set. Also, since this split is period-based
 different months — same caveat as the original split: any train-only
 statistic (imputation medians, mean-encodings) must be fit on train alone
 and applied to val/test, never fit across buckets.
+
+### 2026-09-13 (cont'd) — Pinned dependencies (`==`, not bare names)
+
+**Concept**: `requirements.txt` listing bare package names (`pandas`, not
+`pandas==3.0.3`) means `pip install -r requirements.txt` resolves whatever
+the *latest available* version is *at install time* — a different day, a
+different machine, or a different person running that command can silently
+get different library versions than the ones this project's numbers were
+actually produced with.
+
+**Why here**: `/audit` found `scikit-learn`/`lightgbm`/`shap`/`streamlit`/
+`seaborn` weren't installed at all in this environment despite being listed
+- fixing that with `pip install -r requirements.txt` surfaced a second,
+real problem: the resolved `numpy` jumped from 1.26.1 to 2.4.6 (a major
+version), which broke `shap`'s `opencv-python` dependency (compiled against
+numpy 1.x's ABI) until `opencv-python` was itself upgraded to a numpy-2-
+compatible build. Pinning locks in the exact combination that's confirmed
+to actually work together, so a future install doesn't silently redo this.
+
+**How it works**: after confirming every package imports cleanly and
+`pytest` passes, each line in `requirements.txt` was rewritten from a bare
+name to `package==<installed version>` (e.g. `pandas==3.0.3`,
+`numpy==2.4.6`), including `opencv-python==5.0.0.93` added explicitly even
+though it's only an indirect dependency (via `shap`) - pinning it directly
+prevents pip from re-resolving an old, numpy-2-incompatible version on a
+future fresh install.
+
+**Watch out for**: pinning freezes the *known-good* combination, not
+necessarily the *best* one - a future intentional upgrade (e.g. a newer
+LightGBM with a needed feature) still means manually bumping the pin and
+re-verifying everything imports and tests pass, not just editing one line
+and assuming it's fine.

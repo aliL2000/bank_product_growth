@@ -172,3 +172,91 @@ right now, ahead of any single carried-over item.
 **Still open, unchanged**: [no-baseline-model-yet], [env-reproducibility],
 [eyeballed-cutoffs] (partially mitigated), [docs-outpacing-modeling],
 [correlation-yardstick-vs-nonmonotonic-feature].
+
+### 2026-09-13 (cont'd) — full `/audit` run
+
+**Strengths**: point-in-time t-1 joins remain correct and consistent across
+all four build scripts, each with a merge-safety `assert`; train-only
+imputation/statistics correctly isolated everywhere, including today's new
+val/test buckets; today's 3-way split work was independently re-verified
+(rebuilt files, re-run notebooks, correlations stable, 13/13 tests passing)
+rather than taken on faith; decision log discipline holds — `004` follows
+the same alternatives-considered rigor as `001`-`003`.
+
+**New findings**:
+
+1. **[env-not-installed]** `scikit-learn`, `lightgbm`, `shap`, `streamlit`,
+   and `seaborn` are not importable in this environment right now, despite
+   being listed in `requirements.txt`. Confirmed via `pip freeze` (only
+   `fpdf2`, `matplotlib`, `numpy==1.26.1`, `pandas==3.0.3`, `pyarrow`,
+   `pytest` present) and direct `import sklearn` / `import lightgbm` both
+   raising `ModuleNotFoundError`. This is the same failure class as
+   [env-reproducibility] (2026-08-10, matplotlib/nbconvert/ipykernel
+   missing) recurring a second time, but now blocking: the very next
+   roadmap step (baseline LR + LightGBM) cannot run until this is fixed.
+   Fix: `pip install -r requirements.txt`, verify with an import check,
+   before starting baseline modeling.
+2. **[readme-status-stale]** `README.md:75` still reads `🟡 Phase 0 —
+   scaffolding in progress.` while `ROADMAP.md`'s own status block shows
+   Phase 1 complete and Phase 2 feature engineering (3 of 5 items) done.
+   Since this project's stated purpose includes eventually backing a
+   resume bullet (`docs/resume_bullets.md`), the front door document
+   undercuts that goal by understating progress to any outside reader.
+   Fix: update the Status line each session, or delete it and point to
+   ROADMAP's status block as the single source of truth.
+
+**Carried over from 2026-09-12 audit**, re-checked against current code:
+
+1. **[no-held-out-test-set] — RESOLVED** (2026-09-13 session, see entry
+   above and `docs/decisions/004-three-way-split.md`).
+2. **[no-baseline-model-yet] — STILL OPEN, higher stakes.** `src/models/`
+   and `src/viz/` both confirmed empty (0 files). Five sessions of
+   split/feature/infra work since 2026-08-02, zero modeling code; Phase 2's
+   original weeks 5-7 window is now behind ROADMAP's own pacing.
+3. **[env-reproducibility] — STILL OPEN, now concretely blocking.** See new
+   finding [env-not-installed] above — no longer a hypothetical
+   reproducibility risk, it's the literal next-session blocker.
+   `requirements.txt` remains fully unpinned (no `==` anywhere, no
+   lockfile), meaning even a successful `pip install` today isn't
+   guaranteed to reproduce the exact versions used when results are
+   finalized.
+4. **[eyeballed-cutoffs] — STILL OPEN, unchanged.** No new evidence this
+   session.
+5. **[docs-outpacing-modeling] — STILL OPEN, worsening.**
+   `docs/concepts_log.md` (453 lines, 13 dated entries) + `ROADMAP.md` (414
+   lines) + `docs/audit_log.md` (174 lines) = 1,041 lines of process
+   documentation vs. 0 files in `src/models/` and `src/viz/`.
+6. **[correlation-yardstick-vs-nonmonotonic-feature] — STILL OPEN,
+   unchanged.** `age_years` correlation (0.0356 today) still not
+   re-evaluated with a rank-correlation or per-bin lift table.
+
+**Bottom line**: engineering hygiene on what's actually been built remains
+genuinely strong, but the project is one broken `import lightgbm` away from
+a stalled next session, and the README currently undercuts the resume-
+facing goal the project exists for. Fix the environment and the README
+status line before anything else, then go straight to a baseline model —
+no more infra or documentation sessions until one exists.
+
+### 2026-09-13 (cont'd 2) — status update: environment + README fixed
+
+1. **[env-not-installed] — RESOLVED.** `pip install -r requirements.txt`
+   run; `scikit-learn`, `lightgbm`, `shap`, `streamlit`, `seaborn` all now
+   import cleanly. Surfaced one real follow-on issue in the process: the
+   resolved `numpy` (1.26.1 → 2.4.6) broke `shap`'s `opencv-python`
+   dependency (old build, pre-numpy-2 ABI) — fixed by upgrading
+   `opencv-python` to 5.0.0.93. All 13 tests re-confirmed passing after
+   both fixes. New concept (dependency pinning) logged in
+   `docs/concepts_log.md`.
+2. **[env-reproducibility] — RESOLVED**, folded into #1's fix:
+   `requirements.txt` now pins every package to the exact version
+   confirmed working together (`pandas==3.0.3`, `numpy==2.4.6`,
+   `scikit-learn==1.9.1`, `lightgbm==4.7.0`, `opencv-python==5.0.0.93`
+   added explicitly since it's the version that actually fixed the shap
+   break, etc.) instead of bare unpinned names.
+3. **[readme-status-stale] — RESOLVED.** `README.md`'s Status section no
+   longer duplicates a hand-maintained phase line; it now points to
+   `ROADMAP.md`'s status-at-a-glance block as the single source of truth.
+
+**Still open, unchanged**: [no-baseline-model-yet], [eyeballed-cutoffs]
+(partially mitigated), [docs-outpacing-modeling],
+[correlation-yardstick-vs-nonmonotonic-feature].

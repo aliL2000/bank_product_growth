@@ -72,4 +72,5 @@ product_growth/
   causal effects.
 
 ## Status
-🟡 Phase 0 — scaffolding in progress.
+See `ROADMAP.md`'s status-at-a-glance block for current phase progress —
+tracked there instead of duplicated here, so this line can't go stale.

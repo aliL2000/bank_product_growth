@@ -28,10 +28,13 @@ entry to the working log every session, even a short one.
 > covers the label-merge and feature-join logic. **Split is now 3-way**
 > (train 11 months / val 2 months / test 3 months, see
 > `docs/decisions/004-three-way-split.md`) so val can be used for model
-> selection without biasing the final reported number. **Next up:** assemble
-> train/val/test feature tables from the split + all three feature files +
-> label, then baseline logistic regression + LightGBM (fit on train, select
-> on val, report once on test). Full detail is in the Working Log below.
+> selection without biasing the final reported number. **Environment is
+> installed and pinned** (`requirements.txt`, all versions confirmed
+> working together — `pip install -r requirements.txt` is sufficient).
+> **Next up:** assemble train/val/test feature tables from the split + all
+> three feature files + label, then baseline logistic regression +
+> LightGBM (fit on train, select on val, report once on test). Full detail
+> is in the Working Log below.
 
 ## Phase 0 — Setup (Week 1)
 - [x] Scaffold repo structure
@@ -412,3 +415,31 @@ entry to the working log every session, even a short one.
   frames, then baseline logistic regression + LightGBM — fit on train,
   compare/tune on val, compute the final precision@K number on test
   exactly once.
+
+### 2026-09-13 (cont'd 3) — `/audit`, then environment + README fixes
+
+- Ran a full `/audit`. Top finding: `scikit-learn` and `lightgbm` — the two
+  libraries baseline modeling needs next — weren't actually installed in
+  this environment despite being in `requirements.txt`, a recurrence of the
+  same env-drift problem first caught on 2026-08-10. Second finding:
+  `README.md`'s Status line still said "Phase 0 — scaffolding in
+  progress," badly understating actual progress. Full findings (including
+  carried-over items, one resolved this session) in `docs/audit_log.md`.
+- Fixed both: ran `pip install -r requirements.txt`, which surfaced a real
+  follow-on break (resolved `numpy` 1.26.1→2.4.6 broke `shap`'s
+  `opencv-python` dependency, an old pre-numpy-2 build) — fixed by
+  upgrading `opencv-python` to 5.0.0.93. Confirmed every required package
+  imports cleanly and all 13 tests still pass, then pinned every line in
+  `requirements.txt` to the exact confirmed-working versions instead of
+  bare names, closing the longer-standing [env-reproducibility] finding
+  too. New concept (dependency pinning) logged in `docs/concepts_log.md`.
+- Rewrote `README.md`'s Status section to point at `ROADMAP.md`'s
+  status-at-a-glance block instead of duplicating a hand-maintained phase
+  line that kept going stale.
+- Still open from the audit, not addressed this session:
+  [no-baseline-model-yet] (now the clear next-session priority),
+  [eyeballed-cutoffs], [docs-outpacing-modeling],
+  [correlation-yardstick-vs-nonmonotonic-feature].
+- Next: no more infra/doc sessions — assemble train/val/test feature
+  tables and get a first baseline (logistic regression + LightGBM) running
+  end to end, evaluated with precision@K vs. random targeting.
