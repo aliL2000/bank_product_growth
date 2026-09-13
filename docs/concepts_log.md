@@ -412,3 +412,42 @@ with adoption. Both are needed for different failure modes. Also, an
 `assert` compiled out under Python's `-O` flag is a known footgun in
 general, but not a concern here since these scripts are always run as
 plain `python script.py`, never with `-O`.
+
+### 2026-09-13 — Held-out test set (train/val/test, not just train/val)
+
+**Concept**: A held-out test set is a third data bucket, disjoint from
+train and val, that's used *once* — at the very end, only to report a
+model's final performance — and never touched while choosing between
+models or hyperparameters. Val stays the bucket you compare candidates on
+as many times as needed; test is the number you're willing to stand behind.
+
+**Why here**: the upcoming baseline step compares logistic regression vs.
+LightGBM (and likely tunes LightGBM's hyperparameters) using val. If the
+same val set were then quoted as "the model's performance" in
+`reports/02_baseline_model.md`, that number would be optimistically biased
+— repeatedly picking whatever scores best on a fixed val set means some of
+that score reflects fitting val's specific quirks, not true generalization.
+Flagged as open `/audit` finding [no-held-out-test-set] on 2026-09-11; this
+project's numbers are also meant to eventually back verified resume
+bullets (`docs/resume_bullets.md`), which raised the bar on rigor here.
+
+**How it works**: `src/features/train_val_split.py` now assigns each
+labeled, eligible row to one of three chronological buckets instead of two
+— train (2015-02 to 2015-12, 11 months), val (2016-01 to 2016-02, 2
+months), test (2016-03 to 2016-05, 3 months, unchanged from the old val
+window). Same period-based logic as the original 2-way split (`
+docs/decisions/002-train-val-split.md`): train on the past, validate on a
+more recent slice, and now report on the most recent slice of all, matching
+the real deployment question of "does this generalize to the future."
+Model workflow going forward: fit on train, compare/tune on val, compute
+the final reported metric on test exactly once. Full reasoning in
+`docs/decisions/004-three-way-split.md`.
+
+**Watch out for**: the discipline only works if test is genuinely never
+looked at during model selection — checking test performance "just to see"
+partway through modeling and then going back to tune further silently
+turns test into a second val set. Also, since this split is period-based
+(not customer-level), all three buckets share the same customers at
+different months — same caveat as the original split: any train-only
+statistic (imputation medians, mean-encodings) must be fit on train alone
+and applied to val/test, never fit across buckets.

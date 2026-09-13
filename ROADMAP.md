@@ -24,11 +24,14 @@ entry to the working log every session, even a short one.
 > `/audit` found already-holders contaminating the negative class (see
 > `docs/decisions/003-eligibility-filter.md`). **All `data/processed/`
 > intermediates are now Parquet** (~7x smaller than the old CSVs), and a
-> `tests/` suite (12 pytest tests, runnable from VSCode's Test Explorer)
-> covers the label-merge and feature-join logic. **Next up:** assemble
-> train.csv/val.csv from the split + all three feature files + label, then
-> baseline logistic regression + LightGBM. Full detail is in the Working
-> Log below.
+> `tests/` suite (13 pytest tests, runnable from VSCode's Test Explorer)
+> covers the label-merge and feature-join logic. **Split is now 3-way**
+> (train 11 months / val 2 months / test 3 months, see
+> `docs/decisions/004-three-way-split.md`) so val can be used for model
+> selection without biasing the final reported number. **Next up:** assemble
+> train/val/test feature tables from the split + all three feature files +
+> label, then baseline logistic regression + LightGBM (fit on train, select
+> on val, report once on test). Full detail is in the Working Log below.
 
 ## Phase 0 — Setup (Week 1)
 - [x] Scaffold repo structure
@@ -375,3 +378,37 @@ entry to the working log every session, even a short one.
   test period) so the eventual baseline number isn't the same one used for
   model selection — addresses [no-held-out-test-set], the other flagged
   priority item.
+
+### 2026-09-13 — 3-way train/val/test split, addressing [no-held-out-test-set]
+
+- Discussed and decided the open `/audit` finding from 2026-09-11:
+  val was going to be used both to pick between LR/LightGBM (and tune
+  hyperparameters) and to report the final baseline number, which biases
+  that number optimistically. Explained the train/val/test concept and
+  alternatives (time-series CV, 2-way split with a caveat) before deciding;
+  full reasoning in `docs/decisions/004-three-way-split.md`.
+- Repartitioned `src/features/train_val_split.py`: test = last 3 labeled
+  months (2016-03/04/05, unchanged from the old val window — held out,
+  reported once), val = the 2 months before that (2016-01/02, for model
+  selection), train = the remaining 11 months (2015-02 to 2015-12). New
+  counts: train 7,694,326 rows / 48,696 adoptions (0.633%), val 1,751,740 /
+  7,673 (0.438%), test 2,665,623 / 12,749 (0.478%) — test's counts match
+  the old val bucket exactly, as expected.
+- Rebuilt all three Phase 2 feature files against the corrected split and
+  re-executed notebooks 02–04 (train split only, now 11 months instead of
+  13): correlations moved slightly but ranking and magnitudes held
+  (product_count_prev 0.163→0.166, tenure 0.059→0.060, activity
+  0.083→0.084, age 0.035→0.036) — expected drift from a smaller train
+  window, not a red flag.
+- Updated `tests/test_train_val_split.py` for the new three-way boundary
+  (13 tests now, all passing). New concept logged in
+  `docs/concepts_log.md`; `docs/audit_log.md` updated marking
+  [no-held-out-test-set] RESOLVED.
+- Noted but not fixed this session: `src/reports/generate_technical_deepdive.py`
+  still describes the old 2-way split with stale row counts — needs a
+  refresh pass, not urgent since it doesn't block modeling work.
+- Next: assemble train/val/test feature tables (split + three feature
+  files + label, joined on `ncodpers`/`fecha_dato`) into modeling-ready
+  frames, then baseline logistic regression + LightGBM — fit on train,
+  compare/tune on val, compute the final precision@K number on test
+  exactly once.

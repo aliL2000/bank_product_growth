@@ -1,15 +1,19 @@
-"""Time-respecting train/val split over the credit card adoption label.
+"""Time-respecting train/val/test split over the credit card adoption label.
 
-Validation = the last 3 labeled months (2016-03, 2016-04, 2016-05); train =
-every earlier labeled month (2015-02 through 2016-02). Rows with no defined
+Test = the last 3 labeled months (2016-03, 2016-04, 2016-05) - touched once,
+at the end, to report the final baseline number. Val = the 2 months before
+that (2016-01, 2016-02) - used to compare models/hyperparameters. Train =
+every earlier labeled month (2015-02 through 2015-12). Rows with no defined
 label (2015-01, and later gap rows for customers with no prior-month row) are
-dropped here since they can't be used for either training or evaluation.
-Rows where the customer already held a credit card at t-1 are also dropped
-here - see docs/decisions/003-eligibility-filter.md for why the modeling
-population is restricted to eligible non-holders.
+dropped here since they can't be used for training or evaluation. Rows where
+the customer already held a credit card at t-1 are also dropped here - see
+docs/decisions/003-eligibility-filter.md for why the modeling population is
+restricted to eligible non-holders.
 
-See docs/concepts_log.md for why this is a period-based split (not a
-customer-holdout split) and why no gap month is needed between train and val.
+See docs/decisions/004-three-way-split.md for why a third, held-out test
+bucket was added, and docs/concepts_log.md for why this is a period-based
+split (not a customer-holdout split) and why no gap month is needed between
+adjacent buckets.
 """
 
 from pathlib import Path
@@ -20,7 +24,8 @@ PROCESSED_DIR = Path(__file__).resolve().parents[2] / "data" / "processed"
 LABELS_PATH = PROCESSED_DIR / "adoption_labels_tjcr.parquet"
 OUTPUT_PATH = PROCESSED_DIR / "train_val_split.parquet"
 
-VAL_MONTHS = {"2016-03", "2016-04", "2016-05"}
+TEST_MONTHS = {"2016-03", "2016-04", "2016-05"}
+VAL_MONTHS = {"2016-01", "2016-02"}
 
 
 def load_labeled() -> pd.DataFrame:
@@ -44,10 +49,16 @@ def load_labeled() -> pd.DataFrame:
     return df[df["label_defined"] & (df["prev_flag"] == 0)].copy()
 
 
+def assign_split(month: str) -> str:
+    if month in TEST_MONTHS:
+        return "test"
+    if month in VAL_MONTHS:
+        return "val"
+    return "train"
+
+
 def build_split(labeled: pd.DataFrame) -> pd.DataFrame:
-    labeled["split"] = labeled["month"].astype(str).apply(
-        lambda m: "val" if m in VAL_MONTHS else "train"
-    )
+    labeled["split"] = labeled["month"].astype(str).apply(assign_split)
     return labeled[["ncodpers", "fecha_dato", "split"]]
 
 

@@ -154,3 +154,21 @@ right now, ahead of any single carried-over item.
 **Still open, unchanged**: [no-baseline-model-yet], [no-held-out-test-set],
 [env-reproducibility], [eyeballed-cutoffs] (partially mitigated),
 [docs-outpacing-modeling], [correlation-yardstick-vs-nonmonotonic-feature].
+
+### 2026-09-13 — status update (no new /audit run; fix made in a normal session)
+
+1. **[no-held-out-test-set] — RESOLVED.** `train_val_split.py` now assigns
+   a three-way `train`/`val`/`test` split instead of two: train = 2015-02
+   to 2015-12 (11 months), val = 2016-01 to 2016-02 (2 months, for model
+   selection), test = 2016-03 to 2016-05 (3 months, unchanged from the old
+   val window — held out, reported once). See
+   `docs/decisions/004-three-way-split.md`. All three Phase 2 feature files
+   and their sanity-check notebooks rebuilt/re-run against the corrected
+   split; feature ranking and correlation magnitudes essentially unchanged
+   (product_count_prev 0.163→0.166, tenure 0.059→0.060, activity
+   0.083→0.084, age 0.035→0.036). `tests/test_train_val_split.py` updated
+   for the new boundary; all 13 tests pass.
+
+**Still open, unchanged**: [no-baseline-model-yet], [env-reproducibility],
+[eyeballed-cutoffs] (partially mitigated), [docs-outpacing-modeling],
+[correlation-yardstick-vs-nonmonotonic-feature].
