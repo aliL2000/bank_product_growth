@@ -483,3 +483,41 @@ necessarily the *best* one - a future intentional upgrade (e.g. a newer
 LightGBM with a needed feature) still means manually bumping the pin and
 re-verifying everything imports and tests pass, not just editing one line
 and assuming it's fine.
+
+### 2026-09-15 — Assembling a wide modeling table (`merge(..., validate=)`)
+
+**Concept**: The four pieces built across Phase 2 (the eligible population +
+split, the adoption label, and three feature files) each live in their own
+file, keyed the same way: one row per (`ncodpers`, `fecha_dato`). Assembling
+them into one "modeling table" is just a chain of left joins on that shared
+key - no new logic, just combining what already exists. Pandas'
+`merge(..., validate="one_to_one")` adds a built-in check that neither side
+of a join has a duplicate key, instead of relying only on a manual
+`assert len(merged) == len(before)` (used in the earlier feature scripts).
+
+**Why here**: a baseline model needs one flat table - id columns, the
+target, and every feature column - not four files a model has to be
+manually stitched together from each time. Doing the stitching once here,
+rather than inside the modeling script, keeps that script focused on
+modeling instead of data plumbing.
+
+**How it works**: `src/features/build_modeling_table.py` starts from
+`train_val_split.parquet` (the eligible, labeled population with its
+train/val/test tag) and left-joins in the label, then each feature file in
+turn, all on `(ncodpers, fecha_dato)`. `validate="one_to_one"` makes pandas
+raise immediately if either side of a join turns out to have a repeated
+key - which would silently multiply rows (a "fan-out") rather than just
+adding columns. The row-count assert stays too, since `validate` only
+checks for duplicate *keys*, not that every row on the left found a
+match on the right (a row with no match still passes `validate`, it just
+gets `NaN`). Output: `data/processed/modeling_table.parquet`, 12,111,689
+rows x 22 columns - one row per eligible labeled customer-month, with
+`split`, `adoption`, and every Phase 2 feature.
+
+**Watch out for**: `validate="one_to_one"` only proves the join was safe
+given the *keys* it saw - it can't catch a case where the keys are unique
+but wrong (e.g. accidentally joining month t instead of month t-1, which
+each feature script's own point-in-time logic is responsible for getting
+right *before* this assembly step ever runs). Assembly-time validation and
+per-feature point-in-time correctness are two different failure modes,
+and this step only guards the first one.

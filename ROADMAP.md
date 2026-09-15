@@ -31,9 +31,12 @@ entry to the working log every session, even a short one.
 > selection without biasing the final reported number. **Environment is
 > installed and pinned** (`requirements.txt`, all versions confirmed
 > working together — `pip install -r requirements.txt` is sufficient).
-> **Next up:** assemble train/val/test feature tables from the split + all
-> three feature files + label, then baseline logistic regression +
-> LightGBM (fit on train, select on val, report once on test). Full detail
+> **Modeling table is assembled** (`data/processed/modeling_table.parquet`,
+> gitignored — rerun `src/features/build_modeling_table.py` if missing):
+> 12,111,689 rows x 22 columns, one row per eligible labeled customer-month
+> with `split`, `adoption` (target), and all Phase 2 features. **Next up:**
+> baseline logistic regression + LightGBM (fit on train, select on val,
+> report once on test) with precision@K vs. random targeting. Full detail
 > is in the Working Log below.
 
 ## Phase 0 — Setup (Week 1)
@@ -443,3 +446,25 @@ entry to the working log every session, even a short one.
 - Next: no more infra/doc sessions — assemble train/val/test feature
   tables and get a first baseline (logistic regression + LightGBM) running
   end to end, evaluated with precision@K vs. random targeting.
+
+### 2026-09-15 — Assembled the modeling table
+
+- Built `src/features/build_modeling_table.py`: starts from
+  `train_val_split.parquet` (the eligible, labeled population + its
+  train/val/test tag) and left-joins in the adoption label and all three
+  Phase 2 feature files on `(ncodpers, fecha_dato)`. Every join used
+  pandas' `merge(..., validate="one_to_one")` in addition to the existing
+  row-count assert, catching a duplicate key on either side before it could
+  silently fan out rows — new technique logged in `docs/concepts_log.md`.
+- Every join matched 100% (all four sources were built against the exact
+  same population, so no NaNs introduced by the joins themselves). Output:
+  `data/processed/modeling_table.parquet`, 12,111,689 rows x 22 columns.
+  Per-split adoption rates reproduced exactly what was logged when the
+  split was built (train 0.633%, val 0.438%, test 0.478%), confirming
+  nothing was dropped, duplicated, or miscounted in the assembly.
+- Added `tests/test_build_modeling_table.py` (3 tests: row-count-preserving
+  join with an unmatched row filled as NaN, duplicate-key detection via
+  `validate=`, and a full `assemble()` smoke test on synthetic data) — full
+  suite now 16 tests, all passing.
+- Next: baseline logistic regression + LightGBM on `modeling_table.parquet`
+  — fit on train, compare on val, report precision@K on test exactly once.
