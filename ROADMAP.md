@@ -33,11 +33,16 @@ entry to the working log every session, even a short one.
 > working together — `pip install -r requirements.txt` is sufficient).
 > **Modeling table is assembled** (`data/processed/modeling_table.parquet`,
 > gitignored — rerun `src/features/build_modeling_table.py` if missing):
-> 12,111,689 rows x 22 columns, one row per eligible labeled customer-month
-> with `split`, `adoption` (target), and all Phase 2 features. **Next up:**
-> baseline logistic regression + LightGBM (fit on train, select on val,
-> report once on test) with precision@K vs. random targeting. Full detail
-> is in the Working Log below.
+> 12,111,689 rows x 23 columns, one row per eligible labeled customer-month
+> with `split`, `adoption` (target), and all Phase 2 features. **Age's
+> correlation was re-checked with a per-bin lift table** (not just Pearson)
+> per `/audit`'s [correlation-yardstick-vs-nonmonotonic-feature] finding —
+> confirmed a real, strong non-monotonic pattern (peaks 45-50 at 2.04x the
+> overall rate), so `age_years_sq` (train-mean-centered) was added to
+> `build_features_demographics.py` so logistic regression can fit it too.
+> **Next up:** baseline logistic regression + LightGBM (fit on train,
+> select on val, report once on test) with precision@K vs. random
+> targeting. Full detail is in the Working Log below.
 
 ## Phase 0 — Setup (Week 1)
 - [x] Scaffold repo structure
@@ -468,3 +473,36 @@ entry to the working log every session, even a short one.
   suite now 16 tests, all passing.
 - Next: baseline logistic regression + LightGBM on `modeling_table.parquet`
   — fit on train, compare on val, report precision@K on test exactly once.
+
+### 2026-09-15 (cont'd) — Audit review + age correlation re-check
+
+- Reviewed the open `/audit` findings with Adam and picked one to act on
+  now: [correlation-yardstick-vs-nonmonotonic-feature] (age's Pearson
+  correlation understating its real relationship with adoption, flagged
+  2026-09-11). The other three open items ([no-baseline-model-yet],
+  [eyeballed-cutoffs], [docs-outpacing-modeling]) were left as-is — the
+  first resolves naturally once baseline modeling starts, the other two
+  don't block anything right now.
+- Built a per-bin lift table for `age_years` on the train split (12
+  age buckets): adoption rate ranges from 0.04x the overall rate at age
+  20-25 up to 2.04x at 45-50, back down to 0.29x at 80+ - confirmed the
+  non-monotonic pattern Phase 1 EDA already noted is real and far stronger
+  than Pearson's 0.0356 ("weak") suggested. Considered Spearman rank
+  correlation as an alternative fix and rejected it - it only handles
+  monotonic-but-nonlinear relationships, not a curve that rises and falls,
+  so it would have made the same mistake as Pearson.
+- Since a plain linear model (logistic regression, part of the upcoming
+  baseline) can't use a non-monotonic pattern from `age_years` alone,
+  added `age_years_sq` (age centered on the train-only mean, then squared)
+  to `build_features_demographics.py` - lets LR fit a parabola instead of
+  a flat line. LightGBM needs no change; tree splits already capture
+  non-monotonic patterns natively. New concept logged in
+  `docs/concepts_log.md`.
+- Rebuilt `features_demographics.parquet` and `modeling_table.parquet`
+  (now 23 columns) - row counts, match rates, and all other feature values
+  reproduced exactly, only the new column changed. Full 16-test suite
+  still passes. `docs/audit_log.md` updated marking
+  [correlation-yardstick-vs-nonmonotonic-feature] RESOLVED.
+- Next: baseline logistic regression + LightGBM on the updated
+  `modeling_table.parquet` — fit on train, compare on val, report
+  precision@K on test exactly once.

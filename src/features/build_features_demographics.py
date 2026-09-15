@@ -11,7 +11,11 @@ working log for 2026-09-11 if writing this from scratch again):
 - age: values > 100 (clearly implausible - max raw value was 164) become
   NaN before imputation; ages under 15 are left alone, since Spain's
   "junior" custodial accounts make young account holders real data, not an
-  error.
+  error. Also builds age_years_sq (age centered on the train mean, then
+  squared) - a per-bin lift table (docs/audit_log.md,
+  [correlation-yardstick-vs-nonmonotonic-feature]) showed adoption peaks
+  around 45-50 and falls off on both sides, a shape a linear model can't
+  capture from age_years alone.
 - sexo / segmento: one-hot encoded categoricals, each with its own
   *_missing flag, same convention as Group 1's numeric *_missing flags.
 - renta (income): imputed with a train-only median **grouped by segmento**
@@ -107,6 +111,17 @@ def impute_and_encode(df: pd.DataFrame) -> pd.DataFrame:
     df["age_years"] = df["age"].fillna(age_median).astype("float32")
     print(f"train-only age median used for imputation: {age_median:.1f}")
 
+    # age's relationship with adoption is non-monotonic (rises, peaks in
+    # middle age, falls - see docs/audit_log.md's
+    # [correlation-yardstick-vs-nonmonotonic-feature] finding), which a
+    # linear model can't capture from age_years alone. Centering on the
+    # train-only mean before squaring (rather than squaring raw age) keeps
+    # age_years and age_years_sq less correlated with each other, which
+    # keeps logistic regression's coefficients on each term more stable.
+    age_mean = df.loc[train_mask, "age_years"].mean()
+    df["age_years_sq"] = ((df["age_years"] - age_mean) ** 2).astype("float32")
+    print(f"train-only age mean used to center age_years_sq: {age_mean:.1f}")
+
     df["sexo_missing"] = df["sexo"].isna()
     df["sexo_h"] = (df["sexo"] == "H").astype("int8")
     df["sexo_v"] = (df["sexo"] == "V").astype("int8")
@@ -147,7 +162,7 @@ if __name__ == "__main__":
 
     out_cols = [
         "ncodpers", "fecha_dato", "split",
-        "age_years", "age_missing",
+        "age_years", "age_years_sq", "age_missing",
         "sexo_h", "sexo_v", "sexo_missing",
         "segmento_top", "segmento_particulares", "segmento_universitario", "segmento_missing",
         "renta_imputed", "renta_log", "renta_missing",

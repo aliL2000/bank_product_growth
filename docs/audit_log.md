@@ -260,3 +260,25 @@ no more infra or documentation sessions until one exists.
 **Still open, unchanged**: [no-baseline-model-yet], [eyeballed-cutoffs]
 (partially mitigated), [docs-outpacing-modeling],
 [correlation-yardstick-vs-nonmonotonic-feature].
+
+### 2026-09-15 — status update: modeling table assembled, age correlation re-checked
+
+1. **[no-baseline-model-yet] — STILL OPEN, unblocked.** Modeling table
+   assembled (`data/processed/modeling_table.parquet`, 12,111,689 rows x 23
+   columns, `src/features/build_modeling_table.py`) - split, label, and
+   all Phase 2 features joined into one table with `validate="one_to_one"`
+   merge checks. Baseline LR + LightGBM is the immediate next session, no
+   remaining data-plumbing blocker.
+2. **[correlation-yardstick-vs-nonmonotonic-feature] — RESOLVED.** Built a
+   per-bin lift table for `age_years` on the train split: adoption rate
+   ranges from 0.04x the overall rate (age 20-25) up to 2.04x (45-50) back
+   down to 0.29x (80+) - confirms the non-monotonic pattern is real and
+   substantially stronger than Pearson's 0.0356 ("weak") suggested. Fixed
+   by adding a train-mean-centered `age_years_sq` term to
+   `build_features_demographics.py`, so logistic regression can fit a
+   parabola instead of a flat line through age; LightGBM needed no change
+   (tree splits already capture non-monotonic patterns natively). Full
+   writeup in `docs/concepts_log.md`.
+
+**Still open, unchanged**: [no-baseline-model-yet] (unblocked, see above),
+[eyeballed-cutoffs] (partially mitigated), [docs-outpacing-modeling].

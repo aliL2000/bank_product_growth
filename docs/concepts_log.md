@@ -521,3 +521,51 @@ each feature script's own point-in-time logic is responsible for getting
 right *before* this assembly step ever runs). Assembly-time validation and
 per-feature point-in-time correctness are two different failure modes,
 and this step only guards the first one.
+
+### 2026-09-15 (cont'd) — Per-bin lift table + a squared term for a non-monotonic feature
+
+**Concept**: Pearson correlation measures how well a *straight line* fits a
+relationship. It's the wrong tool when a feature's true relationship with
+the target rises then falls (or vice versa), because the positive
+deviations on one side and negative deviations on the other partially
+cancel out in the calculation - the number comes out small even if the
+underlying pattern is strong. A per-bin lift table (bucket the feature,
+compute the target rate in each bucket, compare to the overall rate) makes
+no assumption about shape and reveals the true pattern directly. Once a
+non-monotonic pattern is confirmed, a linear model (logistic regression)
+still can't use it from the raw feature alone - the standard fix is adding
+a squared term, so the model can fit a parabola instead of a straight line.
+
+**Why here**: `docs/audit_log.md`'s
+[correlation-yardstick-vs-nonmonotonic-feature] finding flagged that
+`age_years`'s Pearson correlation (0.0356, "weak") was being used to judge
+its usefulness, despite Phase 1 EDA already noting adoption peaks in
+middle age. The upcoming baseline compares logistic regression against
+LightGBM - if age truly matters and LR can't see it, that would make LR
+look artificially worse for a reason that has nothing to do with the
+algorithm, only with how the feature is represented.
+
+**How it works**: computed a lift table on the train split (12
+age buckets, adoption rate per bucket vs. the 0.63% overall rate) — result:
+lift ranges from ~0.04x (20-25) up to ~2.04x (45-50) back down to ~0.29x
+(80+), roughly a 50x range that Pearson's "weak" 0.0356 badly understated.
+Rank correlation (Spearman) was considered but rejected as *also* wrong
+here - it only handles monotonic-but-nonlinear relationships, not a curve
+that rises and falls, so it would have made the same mistake as Pearson in
+a different guise. Fixed by adding `age_years_sq` to
+`build_features_demographics.py`: age is centered on the *train-only* mean
+before squaring (not squared raw), which keeps `age_years` and
+`age_years_sq` less correlated with each other than squaring raw age would
+- logistic regression can then combine both terms to approximate the
+observed parabola shape. LightGBM needs no such help; tree splits find
+non-monotonic patterns on the raw feature automatically, so this addition
+is purely to keep the LR baseline from being handicapped by something
+already known about the data.
+
+**Watch out for**: a squared term only fits a *symmetric* parabola: the
+observed shape isn't perfectly symmetric (the decline is gentler and
+longer on the older side than the rise is on the younger side), so this is
+an approximation, not a perfect fit - if LR's results still look
+age-blind after this, the next step up would be age buckets (one-hot
+bins) instead of a parametric curve, which can fit any shape at the cost
+of more columns and no smooth extrapolation between bins.
