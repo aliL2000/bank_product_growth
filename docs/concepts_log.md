@@ -569,3 +569,72 @@ an approximation, not a perfect fit - if LR's results still look
 age-blind after this, the next step up would be age buckets (one-hot
 bins) instead of a parametric curve, which can fit any shape at the cost
 of more columns and no smooth extrapolation between bins.
+
+### 2026-09-16 — Logistic regression as the baseline classifier
+
+**Concept**: Logistic regression models the log-odds of the target as a
+linear combination of the features: `log(p / (1-p)) = β0 + β1·x1 + ... `.
+Fitting it means finding the coefficients that make the predicted
+probabilities best match the observed 0/1 outcomes (maximizing likelihood,
+via gradient-based optimization under the hood). Each coefficient is
+directly readable: a positive one means that feature pushes the odds of
+adoption up, holding the others fixed.
+
+**Why here**: this project needs a first, simple reference point before
+trying LightGBM - without one, there's no way to tell whether LightGBM's
+extra complexity (and reduced interpretability) is actually earning its
+keep. LR is also cheap to run and its coefficients double as a sanity
+check that the model learned something consistent with what EDA already
+found (e.g. does `product_count_prev` get a strongly positive weight,
+matching its ~0.166 correlation?).
+
+**How it works**: fit on the 7.69M-row train split with 16 features
+(the Phase 2 engineered ones, using `renta_log` instead of the collinear
+`renta_imputed`). Result: ROC-AUC 0.906 (train) / 0.912 (val), and the
+signs matched expectations - `activity_index` and `product_count_prev`
+strongly positive, and `age_years` positive with `age_years_sq` negative,
+which together trace a downward-curving parabola peaking in mid-age (the
+45-50 peak the per-bin lift table found last session).
+
+**Watch out for**: because it's a *linear* model in log-odds space, LR
+can only use a non-linear pattern (like age's) if that shape is
+explicitly engineered into the features first (the squared term) -
+unlike LightGBM, which finds such splits on its own. A high train AUC
+close to val AUC here is reassuring (not overfitting), but AUC alone
+doesn't say anything about the small number of contacts a real targeting
+campaign could afford - that's what next session's precision@K metric is
+for.
+
+### 2026-09-16 (cont'd) — Class weighting for imbalanced classification
+
+**Concept**: When one class vastly outnumbers the other (here, adopters
+are ~0.6% of rows), a model minimizing total error can get away with
+almost always predicting the majority class and still score well on a
+naive metric like accuracy - it just never has to be right about the rare
+class to do so. `class_weight="balanced"` fixes this at the loss-function
+level: it multiplies each row's error by a weight inversely proportional
+to its class's frequency, so misclassifying a rare adopter costs far more
+than misclassifying a common non-adopter, forcing the model to actually
+try to separate the classes.
+
+**Why here**: with adoption at ~0.6%, an unweighted logistic regression
+would have little incentive to push predicted probabilities for real
+adopters above those for non-adopters - exactly the opposite of what's
+needed for a ranking/targeting use case.
+
+**How it works**: sklearn's `class_weight="balanced"` sets each class's
+weight to `n_samples / (n_classes * n_samples_in_that_class)`, so the rare
+class (adopters) gets a much larger weight than the common one - passed
+straight into `LogisticRegression(...)`, no separate resampling step
+needed.
+
+**Watch out for**: this is a loss-reweighting trick, not a change to the
+data - the alternative would be oversampling adopters (e.g. SMOTE) or
+undersampling non-holders, both of which change what rows the model
+actually sees and can introduce their own artifacts (duplicated or
+synthetic rows). Reweighting keeps every real row exactly as observed.
+Also, reweighting shifts predicted *probabilities* away from true
+frequencies (a "balanced" model's 0.5 output doesn't mean a 50% real-world
+chance) - fine for ranking customers by score, but a reason not to read
+its raw probabilities as calibrated real-world estimates without further
+calibration work.

@@ -40,9 +40,12 @@ entry to the working log every session, even a short one.
 > confirmed a real, strong non-monotonic pattern (peaks 45-50 at 2.04x the
 > overall rate), so `age_years_sq` (train-mean-centered) was added to
 > `build_features_demographics.py` so logistic regression can fit it too.
-> **Next up:** baseline logistic regression + LightGBM (fit on train,
-> select on val, report once on test) with precision@K vs. random
-> targeting. Full detail is in the Working Log below.
+> **Baseline logistic regression is done** (`src/models/baseline_logistic_regression.py`,
+> fit on train, quick sanity check on val): ROC-AUC 0.906 train / 0.912 val,
+> ~14-17x lift in the top 1% of scored customers, coefficients directionally
+> consistent with EDA. **Next up:** LightGBM (same train/val split), then
+> the formal precision@K evaluation vs. random targeting comparing both
+> models, reported once on test. Full detail is in the Working Log below.
 
 ## Phase 0 — Setup (Week 1)
 - [x] Scaffold repo structure
@@ -64,7 +67,7 @@ entry to the working log every session, even a short one.
 - [x] Time-respecting train/val split (train on earlier months, validate on later)
 - [x] Feature engineering: tenure, activity index, product count, demographics
       (channel/`canal_entrada` deliberately deferred — see status block)
-- [ ] Baseline logistic regression + LightGBM
+- [ ] Baseline logistic regression (done) + LightGBM (not started)
 - [ ] Evaluate with precision@K / lift over random targeting baseline
 - [ ] Write `reports/02_baseline_model.md`
 
@@ -506,3 +509,29 @@ entry to the working log every session, even a short one.
 - Next: baseline logistic regression + LightGBM on the updated
   `modeling_table.parquet` — fit on train, compare on val, report
   precision@K on test exactly once.
+
+### 2026-09-16 — Baseline logistic regression
+
+- Built `src/models/baseline_logistic_regression.py`: fits on the 7.69M-row
+  train split using 16 of the Phase 2 features (`renta_log` instead of the
+  collinear `renta_imputed`), with continuous features standardized on
+  train-only statistics and `class_weight="balanced"` to counter the
+  ~0.6% adoption rate. Both concepts (logistic regression as a baseline,
+  class weighting for imbalance) explained before coding and logged in
+  `docs/concepts_log.md`.
+- Deliberately scoped small: this is a sanity check, not the formal
+  evaluation. Result: ROC-AUC 0.906 (train) / 0.912 (val), ~14-17x lift in
+  the top 1% of customers by predicted score. Coefficient signs matched
+  expectations — `activity_index` and `product_count_prev` strongly
+  positive, `age_years` positive with `age_years_sq` negative (traces the
+  45-50 adoption peak found last session as a downward parabola).
+- Added `tests/test_baseline_logistic_regression.py` (3 tests: feature
+  selection/target casting, train-only scaler fitting, top-K lift sanity)
+  — full suite now 19 tests, all passing.
+- Deliberately not done today (next session): LightGBM on the same
+  train/val split, then the formal precision@K evaluation (fixed contact
+  budget K, both models vs. random targeting) reported once on test, then
+  `reports/02_baseline_model.md`.
+- Next: LightGBM baseline on `modeling_table.parquet`, same train/val
+  split as today, so it's directly comparable to this logistic regression
+  result.
