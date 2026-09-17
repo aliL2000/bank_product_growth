@@ -139,9 +139,10 @@ def build():
     pdf.set_font("Helvetica", "I", 9.5)
     pdf.multi_cell(
         0, 5,
-        "Prepared August 2026 - covers the reasoning behind Phase 0 and "
-        "Phase 1 work, Phase 2's train/validation split and first feature "
-        "group (now implemented), plus the decided (not yet implemented) "
+        "Prepared September 2026 - covers the reasoning behind Phase 0 and "
+        "Phase 1 work, all of Phase 2's data engineering (split, feature "
+        "engineering, a self-audit fix) and its first trained model "
+        "(logistic regression), plus the decided (not yet implemented) "
         "plan for the rest of Phase 2.",
         align="L", new_x="LMARGIN", new_y="NEXT",
     )
@@ -162,12 +163,13 @@ def build():
     pdf.ln(1.5)
     pdf.multi_cell(
         0, 5.6,
-        "Sections are grouped by project phase. Part 1 through Part 4 cover "
+        "Sections are grouped by project phase. Part 1 through Part 5 cover "
         "work that is done and verified against real output - Part 4 "
-        "specifically covers Phase 2 work completed so far (the "
-        "train/validation split and the first feature group). Part 5 covers "
-        "the remaining Phase 2 plan - genuinely decided, with reasons, but "
-        "not yet written as code - and is marked accordingly throughout.",
+        "covers Phase 2's data engineering (the three-way split, feature "
+        "engineering, and a self-audit that caught a real bug), and Part 5 "
+        "covers Phase 2's first trained model. Part 6 covers what's still "
+        "planned for the rest of Phase 2 - genuinely decided, with reasons, "
+        "but not yet written as code - and is marked accordingly.",
         align="L", new_x="LMARGIN", new_y="NEXT",
     )
     pdf.ln(2)
@@ -480,50 +482,46 @@ def build():
 
     # ================= PART 4 =================
     pdf.add_page()
-    pdf.part_title("Part 4 - Phase 2 So Far: Split & First Feature Group")
+    pdf.part_title("Part 4 - Phase 2: Split, Feature Engineering & Data Quality")
 
     topic_block(
-        pdf, 9, "Time-based (period) train/validation split",
+        pdf, 9, "Time-based (period) train/validation/test split",
         why=(
             "The real use case predicts the future from the past. A random "
             "split would validate the model on rows chronologically mixed "
             "in with training rows, letting validation performance reflect "
-            "an unrealistic scenario where the model implicitly benefits "
-            "from patterns (macro trends, the declining adoption rate seen "
-            "in the Phase 1 EDA) that wouldn't actually be visible yet at "
-            "deployment time."
+            "an unrealistic scenario. A two-way split has a second, subtler "
+            "problem once more than one model is being compared: using the "
+            "same validation set both to pick the best model and to report "
+            "its final performance number is a mild form of double-dipping "
+            "that biases the reported number optimistically."
         ),
         how=(
-            "src/features/train_val_split.py tags every labeled row "
-            "(2015-02 through 2016-05) 'train' if its month is before "
-            "2016-03, 'val' otherwise, with no random component and no gap "
-            "month - the split boundary is a single date. Result: train = "
-            "9,913,274 rows / 56,369 adoptions (0.57%), val = 2,769,147 "
-            "rows / 12,749 adoptions (0.46%). Note this is a period split, "
-            "not a customer-holdout split - the same customer legitimately "
-            "appears in both, at different months, since the question being "
-            "tested is generalization to future months, not to unseen "
-            "customers."
+            "src/features/train_val_split.py tags every eligible labeled "
+            "row three ways by calendar month, no random component: train "
+            "= the earliest 11 months (2015-02 to 2015-12), val = the next "
+            "2 months (2016-01/02), test = the final 3 months (2016-03 to "
+            "2016-05) - held out and reported on exactly once. Result: "
+            "train 7,694,326 rows / 48,696 adoptions (0.633%), val "
+            "1,751,740 / 7,673 (0.438%), test 2,665,623 / 12,749 (0.478%)."
         ),
         alt=(
-            "k-fold cross-validation - scikit-learn's default, excellent for "
-            "independent (i.i.d.) rows, the wrong tool here because rows are "
-            "not independent across time. TimeSeriesSplit is scikit-learn's "
-            "built-in mechanism for the time-respecting version of the same "
-            "idea; a single fixed cutoff was used instead of multiple "
-            "rolling folds since the priority right now is a stable "
-            "validation set to compare feature/model choices against, not "
-            "yet a full time-series CV study."
+            "Time-series cross-validation (rolling-origin, multiple folds) "
+            "is the more rigorous version of the same idea; a single fixed "
+            "three-way cutoff was used instead since the immediate priority "
+            "is a stable set of boundaries to compare a couple of models "
+            "against, not a full CV study. A simpler two-way split with a "
+            "documented optimism caveat was also considered and rejected - "
+            "the three-way split removes the caveat entirely rather than "
+            "just disclosing it."
         ),
         watch=(
-            "Even within a correct time-based split, any preprocessing that "
-            "learns something from the data (scaling, imputing missing "
-            "values, computing category frequencies) must be fit only on "
-            "the training window and then applied to validation - fitting "
-            "it on the full dataset first reintroduces leakage even if the "
-            "split itself is correct. See Topic 10 for where this already "
-            "mattered in practice. Full reasoning in "
-            "docs/decisions/002-train-val-split.md."
+            "The test set only does its job if it's genuinely left alone "
+            "until the very end - looking at test performance to inform an "
+            "earlier decision (which features to keep, which "
+            "hyperparameters to try) quietly turns it into a second "
+            "validation set and undoes the whole point. Full reasoning in "
+            "docs/decisions/004-three-way-split.md."
         ),
         links=[
             ("scikit-learn - TimeSeriesSplit", "https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html"),
@@ -574,30 +572,216 @@ def build():
         ],
     )
 
-    # ================= PART 5 =================
-    pdf.add_page()
-    pdf.part_title("Part 5 - Phase 2 Plan: Building the Model")
-    pdf.planned_banner(
-        "Everything in this part is a decided plan with real reasoning "
-        "behind it, not yet-written code. Treat it as 'here's the plan and "
-        "why,' and expect this section to be revised once it's actually "
-        "implemented and tested against real results."
+    topic_block(
+        pdf, 11, "Group-wise imputation for a segment-varying, skewed feature",
+        why=(
+            "renta (income) is about 20% missing, and unlike tenure/"
+            "activity, typical income genuinely differs a lot by the "
+            "bank's own customer segment (segmento medians ranged ~89k-"
+            "142k across segments vs. one global median around 102k) - a "
+            "single flat fill value would distort segments differently."
+        ),
+        how=(
+            "build_features_demographics.py computes each segmento's "
+            "train-only median income and fills a missing row with its own "
+            "segment's median, falling back to the train-only global "
+            "median for the ~1.4% of rows where segmento itself is also "
+            "missing."
+        ),
+        alt=(
+            "A single global median (Topic 10's approach) - appropriate "
+            "there since tenure/activity don't vary much by segment, "
+            "rejected here since it would wash out a real, sizeable "
+            "difference. A full regression-based imputer (predicting "
+            "income from other features) - judged as overkill for a "
+            "baseline, given the segmento breakdown already captures most "
+            "of the meaningful variation cheaply."
+        ),
+        watch=(
+            "Group-wise imputation needs an explicit fallback for rows "
+            "missing the grouping key itself - assuming every row has a "
+            "valid group to fall back on is an easy way to end up with "
+            "silent NaN propagation instead of a filled value."
+        ),
+        links=[
+            ("scikit-learn - Imputation of missing values", "https://scikit-learn.org/stable/modules/impute.html"),
+        ],
     )
 
     topic_block(
-        pdf, 11, "Logistic regression as the baseline",
+        pdf, 12, "Log-transforming a right-skewed feature",
         why=(
-            "Before reaching for a more powerful model, the plan is to "
-            "establish a simple, fast, fully interpretable baseline. Its "
-            "coefficients are directly readable (a one-unit change in a "
-            "feature shifts the log-odds of adoption by its coefficient), "
-            "making it a genuine sanity check rather than a black box, and "
-            "it trains in seconds even at this row count."
+            "renta's raw distribution is heavily right-skewed (mean ~135k "
+            "vs. median ~102k, max ~29M). A linear model like logistic "
+            "regression is sensitive to a handful of extreme values "
+            "dominating its fitted coefficient, and on the raw scale, "
+            "typical variation among most customers looks tiny next to a "
+            "few extreme incomes."
+        ),
+        how=(
+            "renta_log = log1p(renta_imputed) compresses the right tail "
+            "while preserving rank order, making typical-range differences "
+            "much more visible to a linear model. log1p (log(1+x) instead "
+            "of plain log(x)) avoids an undefined result if any value were "
+            "ever exactly 0."
+        ),
+        alt=(
+            "Winsorizing/clipping extreme values, or quantile-binning "
+            "income into buckets (Topic 8's technique, useful for EDA "
+            "readability) - a continuous log transform was chosen for the "
+            "modeling feature instead since it preserves a smooth "
+            "relationship rather than discretizing it. Confirmed "
+            "empirically: renta_log's correlation with adoption (~0.022) "
+            "was 2.6x renta_imputed's (~0.008)."
+        ),
+        watch=(
+            "A log transform only reshapes scale - it can't turn an "
+            "unrelated feature into a predictive one. It's also purely for "
+            "the linear model's benefit: LightGBM's tree splits are "
+            "invariant to any monotonic transform of a feature, so this "
+            "step does nothing for it either way."
+        ),
+        links=[
+            ("numpy.log1p reference", "https://numpy.org/doc/stable/reference/generated/numpy.log1p.html"),
+        ],
+    )
+
+    topic_block(
+        pdf, 13, "Catching a contaminated negative class via self-audit",
+        why=(
+            "A structured self-review (the project's own '/audit' "
+            "process) of the split and feature files in place at the time "
+            "found that ~4.5% of rows still belonged to customers who "
+            "already held a credit card at t-1. For those rows, "
+            "'adoption' is trivially False - they can't newly adopt "
+            "something they already have - so those rows were quietly "
+            "diluting every correlation number computed against that "
+            "population, including feature-check notebooks already run."
+        ),
+        how=(
+            "Fixed at the earliest point in the pipeline: "
+            "train_val_split.py now filters to label_defined & "
+            "(prev_flag == 0) before assigning train/val/test, so every "
+            "downstream feature file and notebook automatically inherits "
+            "the correction rather than needing individual patches."
+        ),
+        alt=(
+            "Patching each downstream correlation/notebook individually - "
+            "rejected, since the wrong population would keep "
+            "re-contaminating anything built on top of it later. Fixing "
+            "the root population once was safer and cheaper."
+        ),
+        watch=(
+            "The numbers moved after the fix, not just noise - "
+            "product_count_prev's correlation rose from ~0.13 to ~0.163 "
+            "(the contaminated rows were diluting it, not inflating it). "
+            "'Eligible population' is a substantive modeling decision, not "
+            "an implementation detail - getting it wrong changes actual "
+            "conclusions, not just downstream accuracy. Full reasoning in "
+            "docs/decisions/003-eligibility-filter.md."
+        ),
+        links=[],
+    )
+
+    topic_block(
+        pdf, 14, "Per-bin lift tables vs. Pearson correlation for a non-monotonic feature",
+        why=(
+            "age_years's Pearson correlation with adoption came out as a "
+            "'weak' 0.0356, despite Phase 1 EDA already visually noticing "
+            "adoption peaking in middle age - a sign the yardstick, not "
+            "the feature, might be the problem."
+        ),
+        how=(
+            "Pearson correlation measures how well a straight line fits a "
+            "relationship; when a pattern rises then falls, positive and "
+            "negative deviations partially cancel out in the calculation. "
+            "A per-bin lift table (bucket the feature, compute the target "
+            "rate per bucket vs. the overall rate) makes no assumption "
+            "about shape. Built on train (12 age buckets): lift ranged "
+            "from ~0.04x at 20-25 up to ~2.04x at 45-50, back down to "
+            "~0.29x at 80+ - a real, roughly 50x range that Pearson badly "
+            "understated."
+        ),
+        alt=(
+            "Spearman rank correlation - considered and rejected, since it "
+            "only fixes monotonic-but-nonlinear relationships, not a curve "
+            "that both rises and falls; it would repeat Pearson's mistake "
+            "in a different form."
+        ),
+        watch=(
+            "Confirming the real shape doesn't automatically let a linear "
+            "model use it - logistic regression still needed an explicit "
+            "age_years_sq term (centered on the train-only mean before "
+            "squaring, to keep the two terms less correlated with each "
+            "other) to approximate the parabola. LightGBM needed no such "
+            "help, since tree splits find non-monotonic patterns on the "
+            "raw feature natively."
+        ),
+        links=[],
+    )
+
+    topic_block(
+        pdf, 15, "Merge-safety validation and a growing automated test suite",
+        why=(
+            "This pipeline is built from several sequential joins (label, "
+            "three feature groups, final assembly), all keyed on "
+            "(ncodpers, fecha_dato). A silent duplicate key on either side "
+            "of any merge would fan out rows without raising an error, "
+            "corrupting everything downstream with no visible symptom "
+            "until much later."
+        ),
+        how=(
+            "Every merge in the pipeline uses pandas' "
+            "merge(..., validate='one_to_one'), which raises immediately "
+            "on a duplicate key on either side, plus an explicit "
+            "assert len(merged) == len(base) right after (validate only "
+            "checks keys, not that every row found a match). A pytest "
+            "suite (19 tests as of this session) exercises the "
+            "label-building logic, each feature script's point-in-time "
+            "join, and the final assembly step against small synthetic "
+            "frames - runnable directly from VSCode's Test Explorer."
+        ),
+        alt=(
+            "Manually eyeballing row counts after each script run - what "
+            "the project did at first, upgraded once the pipeline grew "
+            "past a couple of scripts, since a manual check is easy to "
+            "skip under time pressure and doesn't run automatically."
+        ),
+        watch=(
+            "validate='one_to_one' only proves a join was safe given the "
+            "keys it saw - it can't catch a case where the keys are "
+            "unique but wrong (e.g. accidentally joining month t instead "
+            "of month t-1). That's a different failure mode, guarded "
+            "against separately by each feature script's own "
+            "point-in-time logic (Topic 7)."
+        ),
+        links=[
+            ("pandas.DataFrame.merge reference", "https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.merge.html"),
+        ],
+    )
+
+    # ================= PART 5 =================
+    pdf.add_page()
+    pdf.part_title("Part 5 - Phase 2: The Baseline Model (implemented)")
+
+    topic_block(
+        pdf, 16, "Logistic regression as the baseline",
+        why=(
+            "Before reaching for a more powerful model, this project needed "
+            "a simple, fast, fully interpretable reference point. Its "
+            "coefficients are directly readable (a one-standard-deviation "
+            "move in a standardized feature shifts the log-odds of "
+            "adoption by its coefficient), making it a genuine sanity "
+            "check rather than a black box, and it trains in seconds even "
+            "at this row count."
         ),
         how=(
             "Models the log-odds of the binary outcome as a linear "
             "combination of the input features; a sigmoid function converts "
-            "that linear score into a probability between 0 and 1."
+            "that linear score into a probability between 0 and 1. Fit on "
+            "the 7.69M-row train split using 16 features (renta_log in "
+            "place of the collinear renta_imputed), with continuous "
+            "features standardized on train-only statistics."
         ),
         alt=(
             "Skipping straight to LightGBM - rejected because without a "
@@ -609,18 +793,68 @@ def build():
         ),
         watch=(
             "Logistic regression assumes a roughly linear relationship "
-            "between each feature and the log-odds of the outcome. The "
-            "Phase 1 EDA already found a non-monotonic, inverted-U "
-            "relationship for age - a plain linear term won't capture that "
-            "well. That's a concrete, EDA-driven reason a more flexible "
-            "model is also being tried, not just modeling fashion."
+            "between each feature and the log-odds of the outcome. Age's "
+            "known non-monotonic pattern (Topic 14) was handled directly "
+            "rather than left as a caveat: adding age_years_sq let the "
+            "model approximate the parabola, and the fitted coefficients "
+            "confirmed it worked - activity_index and product_count_prev "
+            "came out strongly positive, age_years positive with "
+            "age_years_sq negative, tracing the same 45-50 peak. Result: "
+            "ROC-AUC 0.906 (train) / 0.912 (val) - no sign of overfitting "
+            "- and ~14-17x lift among the top 1% of customers by score."
         ),
         links=[("scikit-learn - Linear Models (logistic regression)", "https://scikit-learn.org/stable/modules/linear_model.html")],
-        planned=True,
     )
 
     topic_block(
-        pdf, 12, "Gradient-boosted trees (LightGBM) as the stronger model",
+        pdf, 17, "Class weighting for imbalanced classification",
+        why=(
+            "With adoption at ~0.6% of rows, an unweighted logistic "
+            "regression fit to minimize total error has little incentive "
+            "to push predicted probabilities for real adopters above those "
+            "for non-adopters - the opposite of what a ranking/targeting "
+            "use case needs. This makes concrete the class-imbalance "
+            "strategy decided back in Topic 5."
+        ),
+        how=(
+            "sklearn's class_weight='balanced' sets each class's weight to "
+            "n_samples / (n_classes * n_samples_in_that_class), so the "
+            "rare class (adopters) gets a much larger weight in the loss "
+            "function - passed straight into LogisticRegression(...), no "
+            "separate resampling step needed."
+        ),
+        alt=(
+            "Oversampling adopters (e.g. SMOTE) or undersampling "
+            "non-holders - both change what rows the model actually sees "
+            "and can introduce artifacts (duplicated or synthetic rows). "
+            "Reweighting keeps every real row exactly as observed, "
+            "consistent with the no-resampling stance decided in Topic 5."
+        ),
+        watch=(
+            "Reweighting shifts predicted probabilities away from true "
+            "real-world frequencies - a 'balanced' model's 0.5 output "
+            "doesn't mean a 50% real-world chance. Fine for ranking "
+            "customers by score (this project's actual use case), but a "
+            "reason not to read its raw probabilities as calibrated "
+            "real-world estimates without further calibration work."
+        ),
+        links=[
+            ("scikit-learn - LogisticRegression class_weight parameter", "https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html"),
+        ],
+    )
+
+    # ================= PART 6 =================
+    pdf.add_page()
+    pdf.part_title("Part 6 - Phase 2 Plan: The Stronger Model")
+    pdf.planned_banner(
+        "Everything in this part is a decided plan with real reasoning "
+        "behind it, not yet-written code. Treat it as 'here's the plan and "
+        "why,' and expect this section to be revised once it's actually "
+        "implemented and tested against real results."
+    )
+
+    topic_block(
+        pdf, 18, "Gradient-boosted trees (LightGBM) as the stronger model",
         why=(
             "Tabular data with a mix of numeric and categorical features, a "
             "nonlinear relationship for age, and likely interactions "
@@ -703,8 +937,9 @@ def build():
     pdf.set_text_color(*GRAY)
     pdf.multi_cell(
         0, 5,
-        "This document reflects project state as of August 2026 (through "
-        "the train/validation split and first feature group of Phase 2). "
+        "This document reflects project state as of September 2026 (through "
+        "Phase 2's data engineering and its first trained model, a "
+        "logistic regression baseline). "
         "For the running, dated log of every concept as it's introduced, "
         "see docs/concepts_log.md in the repository; for the "
         "plain-language project narrative, see Project_Recap.pdf.",

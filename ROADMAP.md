@@ -535,3 +535,25 @@ entry to the working log every session, even a short one.
 - Next: LightGBM baseline on `modeling_table.parquet`, same train/val
   split as today, so it's directly comparable to this logistic regression
   result.
+
+### 2026-09-16 (cont'd) — Baseline LR notebook + refreshed recap/deep-dive PDFs
+
+- Built `notebooks/05_baseline_logistic_regression.ipynb`, walking through
+  the baseline step by step by importing and reusing the actual functions
+  from `src/models/baseline_logistic_regression.py` (rather than
+  re-deriving the logic inline) - includes an ROC curve, a predicted-
+  probability histogram split by actual outcome, a coefficient bar chart,
+  and a lift-vs-contact-budget curve across several K values. Executed
+  end to end via `jupyter nbconvert --execute`, no errors.
+- Both `reports/Project_Recap.pdf` and `reports/Technical_Deep_Dive.pdf`
+  had gone stale since their last refresh on 2026-08-17 (still describing
+  only Group 1 features and a 2-way split) - caught up both to cover
+  Groups 2-3, the eligibility-filter audit fix, the 3-way split, modeling
+  table assembly, the age_years_sq fix, and today's baseline LR results.
+  Recap gained plain-language steps 9-13; deep-dive gained Part 4 topics
+  11-15 (group-wise imputation, log-transform, the audit fix, per-bin
+  lift tables, merge-safety/testing) and moved logistic regression + class
+  weighting from "planned" (Part 5) to "implemented," leaving only
+  LightGBM in the still-planned section (now Part 6).
+- Next: LightGBM baseline on `modeling_table.parquet`, same train/val
+  split as the logistic regression baseline, for a direct comparison.

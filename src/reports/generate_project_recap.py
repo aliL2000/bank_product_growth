@@ -126,8 +126,8 @@ def build():
     pdf.set_font("Helvetica", "I", 9.5)
     pdf.multi_cell(
         0, 5,
-        "Prepared August 2026 - covers sessions from project kickoff through the "
-        "early stages of Phase 2 (feature engineering)",
+        "Prepared September 2026 - covers sessions from project kickoff through "
+        "Phase 2's first trained model (a baseline logistic regression)",
         align="L", new_x="LMARGIN", new_y="NEXT",
     )
     pdf.ln(4)
@@ -512,6 +512,139 @@ def build():
         "follow the same pattern and are the immediate next step."
     )
 
+    # --- Step 9: product count + demographics ---
+    pdf.add_page()
+    pdf.numbered_step(
+        9,
+        "Added two more feature groups: how many products someone already "
+        "has, and basic demographics",
+        "The second feature group counts how many of the bank's other "
+        "products (out of ~23, deliberately not counting the credit card "
+        "itself) a customer already holds. The third adds demographics: "
+        "age, sex, the bank's own customer-segment label, and income.\n\n"
+        "For income specifically (about 20% missing in the raw data), a "
+        "flat \"fill in the typical value for everyone\" approach felt too "
+        "crude, since typical income genuinely differs a lot by customer "
+        "segment. So missing income is filled in using the typical income "
+        "*for that customer's own segment*, not one number for the whole "
+        "bank - and a small number of extreme high earners (income data "
+        "like this always has some) are handled with a standard "
+        "\"log transform,\" which compresses very large values without "
+        "changing their relative order, so a handful of outliers don't "
+        "distort the typical pattern the model sees.",
+    )
+    pdf.callout(
+        "The single biggest finding of the whole project so far:",
+        "How many other products a customer already holds turned out to be "
+        "by far the strongest signal found: customers with 6 or more other "
+        "products adopt a credit card at roughly 60 times the rate of "
+        "customers with none. Intuitively, this makes sense - someone who "
+        "already trusts the bank with several products is a much easier "
+        "sell on one more than someone who barely uses the relationship.",
+    )
+
+    # --- Step 10: audit / eligibility-filter bug catch ---
+    pdf.numbered_step(
+        10,
+        "Caught and fixed a subtle bug by deliberately self-auditing the work",
+        "Partway through, a structured self-review of the project (asking, "
+        "in effect, \"where would a skeptical outside reviewer poke "
+        "holes?\") found a real problem: about 4.5% of the rows being used "
+        "still belonged to customers who already had a credit card before "
+        "the month in question. For those rows, \"did not adopt\" is "
+        "meaningless - they couldn't newly adopt something they already "
+        "had - so those rows were quietly diluting every pattern found so "
+        "far, including the \"60 times\" number above (which was actually "
+        "stronger, not weaker, once the fix went in).",
+    )
+    pdf.callout(
+        "Why this is a good sign, not a bad one:",
+        "Catching your own mistake before it reaches a stakeholder is "
+        "exactly the point of building in deliberate review checkpoints "
+        "rather than assuming a first pass is correct. The fix was made at "
+        "the earliest possible point in the process (the train/validation "
+        "split itself), so every downstream file automatically inherited "
+        "the correction instead of needing separate patches everywhere.",
+    )
+
+    # --- Step 11: 3-way split ---
+    pdf.add_page()
+    pdf.numbered_step(
+        11,
+        "Added a third, completely hands-off \"test\" set",
+        "Up to this point, data was split two ways: a training set to "
+        "learn from, and a validation set to check performance. But this "
+        "project plans to try more than one model (logistic regression, "
+        "then a more powerful technique) and compare them on that same "
+        "validation set - and using the very same data both to *pick the "
+        "best model* and to *report its final performance* would make the "
+        "final number a bit too optimistic, since some of that "
+        "\"performance\" is really just having gotten lucky in a way that "
+        "happens to suit the validation set specifically.\n\n"
+        "The fix: split into three pieces instead of two. Train (the "
+        "earliest 11 months) to learn from, validation (the next 2 months) "
+        "to compare and choose between models, and test (the final 3 "
+        "months) - set aside and not looked at again until the very end, "
+        "when the honestly best model gets graded on it exactly once.",
+    )
+
+    # --- Step 12: modeling table assembly ---
+    pdf.numbered_step(
+        12,
+        "Assembled every piece into one ready-to-use table",
+        "All of the pieces built so far - the train/validation/test split, "
+        "the adoption label, and all three feature groups - were combined "
+        "into a single table: 12,111,689 rows (one per eligible customer "
+        "per month) and 23 columns. Every merge was double-checked to make "
+        "sure it didn't accidentally duplicate or drop any rows along the "
+        "way, since a single silent mistake at this assembly step would "
+        "quietly corrupt everything built on top of it.",
+    )
+
+    # --- Step 13: baseline model ---
+    pdf.add_page()
+    pdf.numbered_step(
+        13,
+        "Trained the first real predictive model",
+        "With everything assembled, the project trained its first actual "
+        'model: logistic regression. In plain terms, it works like a '
+        "weighted checklist - it looks at everything known about a "
+        "customer, assigns each fact a learned point value (positive facts "
+        "push the score up, negative facts push it down), adds all the "
+        "points together, and converts that total into an estimated "
+        "probability of adoption.\n\n"
+        "It was deliberately trained first, before anything more "
+        "sophisticated, because it's simple enough to read directly: you "
+        "can look at exactly which facts it decided matter and by how "
+        "much, and check that against everything already learned from "
+        "exploring the data. It passed that check - activity level and "
+        "product count came out as strongly positive, and age traced the "
+        "same peaks-in-middle-age pattern found earlier, rather than "
+        "anything surprising or suspicious.",
+    )
+    pdf.callout(
+        "What the results actually mean, in plain terms:",
+        "Handed one random customer who did adopt a credit card and one "
+        "random customer who didn't, the model correctly identifies which "
+        "one is the real adopter about 91% of the time - a common way to "
+        "grade how well a model separates the two groups. More practically: "
+        "if the bank could only afford to contact its top 1% "
+        "highest-scored customers, that group would actually go on to "
+        "adopt at roughly 15 times the rate you'd get by picking customers "
+        "at random - a first, real signal that this approach could "
+        "meaningfully outperform a scattershot marketing campaign.",
+    )
+    pdf.body(
+        "One more thing had to be handled to get here: adoption is rare "
+        "(about 0.6% of customer-months), so a model left to its own "
+        'devices could get away with just always guessing "no" and still '
+        "be right 99.4% of the time - while being completely useless for "
+        "actually finding anyone to target. A standard technique called "
+        "class weighting was used to force the model to treat a missed "
+        "real adopter as a much costlier mistake than a missed non-adopter, "
+        "so it's actually incentivized to tell the two groups apart."
+    )
+
     # --- Final page: status + next ---
     pdf.add_page()
     pdf.section_title("Where We Are Now, and What's Next")
@@ -534,29 +667,44 @@ def build():
         "standing out as the strongest patterns found so far."
     )
     pdf.bullet(
-        "The train/validation split is done, split honestly by calendar "
-        "month rather than randomly."
+        "The data is split three ways - training, validation, and a "
+        "completely untouched test set - by calendar month rather than "
+        "randomly, so the eventual final grade is honest."
     )
     pdf.bullet(
-        "The first feature group (tenure and activity level) is built and "
-        "cleaned; three more groups are planned before the first model gets "
-        "trained."
+        "All planned feature groups are built and cleaned: tenure, "
+        "activity level, how many other products a customer already holds "
+        "(the strongest single signal found), and demographics (age, sex, "
+        "customer segment, income)."
+    )
+    pdf.bullet(
+        "A subtle data-quality bug (some already-existing cardholders "
+        "incorrectly counted as \"chose not to adopt\") was caught and "
+        "fixed via a deliberate self-review, before it could quietly "
+        "distort any model trained on it."
+    )
+    pdf.bullet(
+        "The first real predictive model - logistic regression - is "
+        "trained and checked: it correctly ranks a real adopter above a "
+        "non-adopter about 91% of the time, and its top 1% highest-scored "
+        "customers adopt at roughly 15 times the average rate."
     )
     pdf.ln(1)
     pdf.set_font("Helvetica", "B", 11.5)
     pdf.set_text_color(*TEAL)
-    pdf.cell(0, 7, "Phase 1 is complete. Phase 2 is underway.", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 7, "Phase 1 is complete. Phase 2 is nearly done.", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(2)
     pdf.set_font("Helvetica", "B", 12)
     pdf.set_text_color(*TEAL)
     pdf.cell(0, 7, "Next up", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(1)
     pdf.body(
-        "Finish feature engineering: how many other products a customer "
-        "already holds, which channel they joined through, and basic "
-        "demographics (income, customer segment). Then train a baseline "
-        "model and a stronger one (logistic regression and LightGBM) and "
-        "compare them."
+        "Train a second, more powerful model (LightGBM, a technique known "
+        "to do well on this kind of data) on the exact same data, then "
+        "formally compare both models using a \"top-K\" evaluation "
+        "(how good is the model at its actual job - ranking the customers "
+        "most worth contacting) against a random-targeting baseline, "
+        "reported once on the untouched test set."
     )
     pdf.body(
         "After that: explaining what drives the model's predictions in plain "
