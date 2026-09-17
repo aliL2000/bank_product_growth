@@ -43,9 +43,14 @@ entry to the working log every session, even a short one.
 > **Baseline logistic regression is done** (`src/models/baseline_logistic_regression.py`,
 > fit on train, quick sanity check on val): ROC-AUC 0.906 train / 0.912 val,
 > ~14-17x lift in the top 1% of scored customers, coefficients directionally
-> consistent with EDA. **Next up:** LightGBM (same train/val split), then
-> the formal precision@K evaluation vs. random targeting comparing both
-> models, reported once on test. Full detail is in the Working Log below.
+> consistent with EDA. **Baseline LightGBM is done too**
+> (`src/models/baseline_lightgbm.py`, same train/val split and 16 features
+> as LR): ROC-AUC 0.915 train / 0.920 val, 17.1x top-1% lift — a real,
+> modest improvement over LR, with `age_years` as the top split feature.
+> Deliberately skips class reweighting (`is_unbalance=True` broke early
+> stopping — see Working Log). **Next up:** the formal precision@K
+> evaluation vs. random targeting, comparing both models, reported once on
+> test. Full detail is in the Working Log below.
 
 ## Phase 0 — Setup (Week 1)
 - [x] Scaffold repo structure
@@ -67,7 +72,7 @@ entry to the working log every session, even a short one.
 - [x] Time-respecting train/val split (train on earlier months, validate on later)
 - [x] Feature engineering: tenure, activity index, product count, demographics
       (channel/`canal_entrada` deliberately deferred — see status block)
-- [ ] Baseline logistic regression (done) + LightGBM (not started)
+- [x] Baseline logistic regression + LightGBM
 - [ ] Evaluate with precision@K / lift over random targeting baseline
 - [ ] Write `reports/02_baseline_model.md`
 
@@ -557,3 +562,48 @@ entry to the working log every session, even a short one.
   LightGBM in the still-planned section (now Part 6).
 - Next: LightGBM baseline on `modeling_table.parquet`, same train/val
   split as the logistic regression baseline, for a direct comparison.
+
+### 2026-09-17 — Baseline LightGBM
+
+- Built `src/models/baseline_lightgbm.py`: gradient boosted decision trees
+  via LightGBM, deliberately reusing the LR baseline's exact train/val
+  split, 16 features, and `top_k_lift` helper so the two are directly
+  comparable. Explained gradient boosting (sequential trees each
+  correcting the prior ensemble's errors) before coding, and why it needs
+  no feature scaling or `age_years_sq` (trees split non-monotonic patterns
+  on raw values natively) — both logged in `docs/concepts_log.md`.
+- Real finding mid-build: tried `is_unbalance=True` (LightGBM's version of
+  LR's `class_weight="balanced"`) first, expecting the same benefit it
+  gave LR. Instead it broke early stopping — `best_iteration_` came back
+  `1`, meaning boosting never got past a single tree, because the inflated
+  rare-class gradient made val AUC swing wildly round to round instead of
+  trending, so round 1 looked like a local peak before a real ensemble
+  could form. Dropping the reweighting let boosting run 36 rounds and
+  score better on every metric. New concept (class weighting can
+  destabilize boosting's sequential fitting even when it helps a one-shot
+  linear model) logged in `docs/concepts_log.md` — the kind of thing only
+  caught by checking `best_iteration_`, not the AUC number alone.
+- Result: ROC-AUC 0.9148 train / 0.9198 val, top-1% lift 17.13x — a real,
+  if modest, improvement over LR's 0.906/0.912 and 14-17x lift.
+  `age_years` is the single most-split feature (292 of ~1,080 total
+  splits), consistent with the non-monotonic signal the per-bin lift table
+  found on 2026-09-15; `tenure_months` and `product_count_prev` follow,
+  matching both models' agreement on the strongest EDA signals.
+- Added `tests/test_baseline_lightgbm.py` (2 tests on synthetic data:
+  valid probability outputs, and early stopping picking fewer rounds than
+  the full `n_estimators` budget) — full suite now 21 tests, all passing.
+- Built `notebooks/06_baseline_lightgbm.ipynb`, mirroring notebook 05's
+  step-by-step pattern (importing and reusing the script's real functions,
+  not re-deriving logic inline) — plus a dedicated demo cell that fits
+  both the `is_unbalance=True` and no-reweighting configs side by side on
+  the real train/val data and prints `best_iteration_` for each, making
+  the class-imbalance finding concrete rather than just described in
+  prose. Also includes an ROC curve, predicted-probability histogram, a
+  feature-importance bar chart (LightGBM's analog to LR's coefficient
+  chart), and the same lift-vs-contact-budget curve as notebook 05 for
+  direct visual comparison. Executed end to end via `jupyter nbconvert
+  --execute`, no errors — every number reproduced exactly what the script
+  printed.
+- **Phase 2 baseline modeling (LR + LightGBM) is done.** Next: the formal
+  precision@K evaluation — fixed contact budget K, both models vs. random
+  targeting, reported once on test — then `reports/02_baseline_model.md`.

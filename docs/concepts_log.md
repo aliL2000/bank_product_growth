@@ -638,3 +638,85 @@ frequencies (a "balanced" model's 0.5 output doesn't mean a 50% real-world
 chance) - fine for ranking customers by score, but a reason not to read
 its raw probabilities as calibrated real-world estimates without further
 calibration work.
+
+### 2026-09-17 — Gradient boosted decision trees (LightGBM)
+
+**Concept**: An ensemble of shallow decision trees built *sequentially*,
+where each new tree is trained to correct the errors of all the trees
+before it (technically, to fit the negative gradient of the loss function
+with respect to the current ensemble's predictions - hence "gradient"
+boosting). The final prediction sums every tree's output through a
+sigmoid. LightGBM is a specific fast implementation: it buckets continuous
+features into histograms before searching for split points (instead of
+sorting every unique value) and grows trees leaf-wise (always splitting
+whichever leaf reduces loss most next) rather than level-wise.
+
+**Why here**: this project's baseline logistic regression (`src/models/
+baseline_logistic_regression.py`, 2026-09-16) needed a hand-engineered
+`age_years_sq` term just to represent one non-monotonic pattern the EDA
+already knew about. A tree-based model finds patterns like that - and
+feature interactions (e.g. "activity matters more at low tenure") -
+automatically, without being told where to look. Boosting was chosen over
+a random forest (which averages independent trees to reduce variance)
+because boosting corrects mistakes sequentially to reduce bias, which
+tends to win on structured tabular data like this; deep learning wasn't
+considered since it typically needs far more rows or engineered structure
+to beat gradient boosting at this data size.
+
+**How it works**: `src/models/baseline_lightgbm.py` reuses the exact same
+train/val split and 16 features as the LR baseline so the two are directly
+comparable. No feature scaling and no `age_years_sq` are needed - tree
+splits are invariant to monotonic transforms and find non-monotonic shapes
+on the raw feature directly. Fit with `n_estimators=500` but early
+stopping (`stopping_rounds=20` on val AUC) picks a much smaller actual
+number of rounds, since boosting can keep improving train error
+indefinitely and start overfitting if allowed to run forever. Result: val
+ROC-AUC 0.9198 (vs. LR's 0.912) and top-1% lift 17.1x (vs. LR's 14-17x) -
+a real, if modest, improvement, with `age_years` as the single most-split
+feature (292 of ~1,080 total splits), consistent with the strong
+non-monotonic signal per-bin lift tables found there.
+
+**Watch out for**: boosting's sequential correction process is a different
+optimization than LR's one-shot convex fit, and doesn't always tolerate
+the same tricks safely - see the class-imbalance finding below
+([[2026-09-17-class-imbalance-and-boosting-instability]], same session)
+for a concrete case where a trick that helped LR actively broke LightGBM.
+
+### 2026-09-17 — Class-weighting can destabilize boosting, even when it helps a linear model
+
+**Concept**: `is_unbalance=True` (LightGBM's version of sklearn's
+`class_weight="balanced"`) reweights the loss so misclassifying the rare
+class costs more. That's a safe, standard fix for a single-shot convex
+optimizer like logistic regression. It is not automatically safe for
+gradient boosting, because boosting fits in discrete sequential rounds -
+each round corrects the residual error left by the rounds before it, and
+an inflated gradient on the rare class means each round's correction is
+larger too.
+
+**Why here**: tried `is_unbalance=True` on the LightGBM baseline first,
+expecting the same benefit it gave LR. Instead, early stopping triggered
+after a single round (`model.best_iteration_ == 1`) - val AUC swung
+sharply round to round instead of settling into a trend, so round 1
+looked like the best of the first 20+21 rounds before boosting could
+actually build a real ensemble. Dropping the reweighting entirely let
+boosting run 36 rounds and score *better* on every metric (val ROC-AUC
+0.9198 vs. 0.9158, top-1% lift 17.1x vs. 13.3x).
+
+**How it works**: trees pick splits by information gain (how much a split
+reduces loss/impurity), which naturally finds a rare class's distinguishing
+features without needing every row reweighted first - unlike a single
+global linear boundary, which can end up biased toward the majority class
+without reweighting. So the reweighting LR needed to *find* the rare class
+at all was, for boosting, just adding instability without adding anything
+trees don't already get from splitting on information gain.
+
+**Watch out for**: this isn't "class weighting is bad for boosting" as a
+blanket rule - it's a real, standard technique (`is_unbalance`/
+`scale_pos_weight` exist for a reason) and can still be worth revisiting
+with a smaller weight, a lower learning rate, or more `stopping_rounds`
+patience if a future dataset's imbalance is severe enough that unweighted
+boosting under-detects the rare class. The lesson is narrower: don't
+assume a fix that helped one model class (linear) transfers safely to a
+structurally different one (sequential ensembles) without checking - here,
+checking `best_iteration_` was what surfaced the problem, not the AUC
+number alone.
