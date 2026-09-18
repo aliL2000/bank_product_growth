@@ -639,6 +639,15 @@ entry to the working log every session, even a short one.
   with hand-computable expected values: correct top-K ranking, a miss
   inside the top-K, the random-targeting baseline's expected values, and
   the comparison table's shape) — full suite now 25 tests, all passing.
+- Built `notebooks/07_precision_at_k_evaluation.ipynb`, mirroring notebooks
+  05/06's pattern (importing and reusing the real functions from
+  `evaluate_precision_at_k.py`/the two baseline modules rather than
+  re-deriving the logic) — adds precision/recall/lift-vs-contact-budget
+  curves for both models plus random targeting, and a dedicated cell
+  making the val-vs-test LightGBM-tie finding concrete (a side-by-side
+  val lift@1% vs. test lift@1% table for both models). Executed end to
+  end via `jupyter nbconvert --execute`, no errors — every number
+  reproduced exactly what the script printed.
 - Next: write `reports/02_baseline_model.md` (the two baselines, the
   precision@K/recall@K table, and the val-vs-test LightGBM-tie finding
   above), which closes out Phase 2. Then Phase 3 — SHAP on the better/
