@@ -40,21 +40,17 @@ entry to the working log every session, even a short one.
 > confirmed a real, strong non-monotonic pattern (peaks 45-50 at 2.04x the
 > overall rate), so `age_years_sq` (train-mean-centered) was added to
 > `build_features_demographics.py` so logistic regression can fit it too.
-> **Baseline logistic regression is done** (`src/models/baseline_logistic_regression.py`,
-> fit on train, quick sanity check on val): ROC-AUC 0.906 train / 0.912 val,
-> ~14-17x lift in the top 1% of scored customers, coefficients directionally
-> consistent with EDA. **Baseline LightGBM is done too**
-> (`src/models/baseline_lightgbm.py`, same train/val split and 16 features
-> as LR): ROC-AUC 0.915 train / 0.920 val, 17.1x top-1% lift — a real,
-> modest improvement over LR, with `age_years` as the top split feature.
-> Deliberately skips class reweighting (`is_unbalance=True` broke early
-> stopping — see Working Log). **The formal precision@K evaluation is done**
-> (`src/models/evaluate_precision_at_k.py`, reported once on test): at a 1%
-> contact budget, LR gets 16.86x lift / 8.06% precision, LightGBM gets
-> 16.89x / 8.08% — essentially tied on test, unlike val where LightGBM had
-> looked clearly ahead (17.13x vs. LR's 14-17x). **Next up:**
-> `reports/02_baseline_model.md` write-up, then Phase 3 (SHAP/explainability).
-> Full detail is in the Working Log below.
+> **Phase 2 is now fully complete**, including the baseline models
+> (`src/models/baseline_logistic_regression.py`, `baseline_lightgbm.py`)
+> and the formal precision@K/recall@K evaluation vs. random targeting,
+> reported once on test (`src/models/evaluate_precision_at_k.py`). Full
+> results and the val-vs-test LightGBM-tie finding are written up in
+> `reports/02_baseline_model.md` — headline: at a 1% contact budget, LR and
+> LightGBM are essentially tied (~16.9x lift), not the clear LightGBM win
+> val alone suggested. **Next up:** Phase 3 — SHAP explainability on the
+> baseline models, translated into a plain-English business narrative,
+> plus identifying an under-served, high-propensity segment. Full detail
+> (including all Phase 1/2 build steps) is in the Working Log below.
 
 ## Phase 0 — Setup (Week 1)
 - [x] Scaffold repo structure
@@ -78,7 +74,7 @@ entry to the working log every session, even a short one.
       (channel/`canal_entrada` deliberately deferred — see status block)
 - [x] Baseline logistic regression + LightGBM
 - [x] Evaluate with precision@K / lift over random targeting baseline
-- [ ] Write `reports/02_baseline_model.md`
+- [x] Write `reports/02_baseline_model.md`
 
 ## Phase 3 — Explainability & Segmentation (Weeks 8–10)
 - [ ] SHAP values on best model
@@ -653,3 +649,29 @@ entry to the working log every session, even a short one.
   above), which closes out Phase 2. Then Phase 3 — SHAP on the better/
   simpler of the two models, translated into a plain-English business
   narrative, plus identifying an under-served high-propensity segment.
+
+### 2026-09-18 (cont'd) — `reports/02_baseline_model.md`, closing out Phase 2
+
+- Wrote `reports/02_baseline_model.md`, following `01_eda_findings.md`'s
+  format: population/split summary, a model comparison table (both
+  baselines' train/val ROC-AUC), the full precision@K/recall@K/lift@K
+  table vs. random targeting on test, the val-vs-test LightGBM-tie
+  finding from the same session's notebook, and implications for Phase 3.
+- Caught and corrected a stale number while writing it: the working log
+  and status block have said "16 features" for both baselines since
+  2026-09-16, but counting `CONTINUOUS_COLS`/`BINARY_COLS` directly in
+  `baseline_logistic_regression.py` gives 6 + 12 = **18** features, not
+  16 - the report uses the verified count. Not worth a full retroactive
+  edit of every past working-log line that repeated the stale number, but
+  flagging here so it isn't repeated again.
+- **Phase 2 is now fully complete** (feature engineering, both baselines,
+  formal precision@K evaluation, write-up). Compressed the ROADMAP status
+  block accordingly - detail that used to live there is now in
+  `reports/02_baseline_model.md` and this Working Log instead.
+- Next: Phase 3 - SHAP values on the baseline model(s), translated into a
+  plain-English business narrative, and identifying an under-served,
+  high-propensity customer segment. Given the near-tie finding, worth
+  deciding which model (or both) to run SHAP on before diving in - the
+  simpler LR is easier to sanity-check SHAP against its own coefficients,
+  while LightGBM's tree-based SHAP is exact and fast; no obligation to
+  pick a "winner" model given today's finding.
