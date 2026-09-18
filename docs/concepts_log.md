@@ -720,3 +720,42 @@ assume a fix that helped one model class (linear) transfers safely to a
 structurally different one (sequential ensembles) without checking - here,
 checking `best_iteration_` was what surfaced the problem, not the AUC
 number alone.
+
+### 2026-09-18 — Precision@K and recall@K as fixed-contact-budget metrics
+
+**Concept**: Precision@K ranks every customer by predicted score and asks:
+of the top K contacted, what fraction actually adopt? Recall@K asks: of all
+the adopters in the whole population, what fraction fall inside that top-K
+list? Lift@K (already used informally as the "top-1% lift" sanity check in
+both baseline sessions) is just precision@K divided by the overall base
+rate - how much better than random targeting the ranked list is.
+
+**Why here**: ROC-AUC measures ranking quality across the entire
+population, and with a ~0.5-0.6% adoption rate, threshold-based metrics
+like accuracy are useless (predicting "no" for everyone scores >99%).
+Neither answers the actual business question this project is building
+toward: "if the bank can only contact K customers, how many will really
+adopt?" That's a fixed-headcount decision, not a probability-threshold
+one - marketing budgets are counts, not cutoffs - so precision@K/recall@K
+are the metrics that will plug directly into Phase 4's targeting-strategy
+and simulated-ROI work.
+
+**How it works**: `src/models/evaluate_precision_at_k.py` refits both
+baselines on train (LightGBM still uses val for early stopping - that's
+model selection, not the reported number) and scores test exactly once,
+per `docs/decisions/004-three-way-split.md`. For each of several K
+fractions (0.1%-5% of the test population) it reports precision, recall,
+and lift for both models plus a random-targeting baseline, whose expected
+precision@K is just the base rate and expected recall@K is k_frac itself
+(a random k_frac-sized sample captures k_frac of the positives in
+expectation, and estimates the population rate, regardless of k_frac).
+
+**Watch out for**: precision@K and recall@K trade off against each other
+as K grows - a small K gives high precision but only covers a small slice
+of total adopters, a large K covers more adopters but dilutes precision
+toward the base rate. There's no single "right" K; it should be picked
+from a real contact-capacity/cost constraint (Phase 4), not chosen to make
+one model look best. Also: computed here on test, the held-out set that
+should only be scored once per `docs/decisions/004-three-way-split.md` -
+re-running this script after changing anything model-related would break
+that guarantee and needs a new decision, not a casual re-run.

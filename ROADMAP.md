@@ -48,9 +48,13 @@ entry to the working log every session, even a short one.
 > as LR): ROC-AUC 0.915 train / 0.920 val, 17.1x top-1% lift — a real,
 > modest improvement over LR, with `age_years` as the top split feature.
 > Deliberately skips class reweighting (`is_unbalance=True` broke early
-> stopping — see Working Log). **Next up:** the formal precision@K
-> evaluation vs. random targeting, comparing both models, reported once on
-> test. Full detail is in the Working Log below.
+> stopping — see Working Log). **The formal precision@K evaluation is done**
+> (`src/models/evaluate_precision_at_k.py`, reported once on test): at a 1%
+> contact budget, LR gets 16.86x lift / 8.06% precision, LightGBM gets
+> 16.89x / 8.08% — essentially tied on test, unlike val where LightGBM had
+> looked clearly ahead (17.13x vs. LR's 14-17x). **Next up:**
+> `reports/02_baseline_model.md` write-up, then Phase 3 (SHAP/explainability).
+> Full detail is in the Working Log below.
 
 ## Phase 0 — Setup (Week 1)
 - [x] Scaffold repo structure
@@ -73,7 +77,7 @@ entry to the working log every session, even a short one.
 - [x] Feature engineering: tenure, activity index, product count, demographics
       (channel/`canal_entrada` deliberately deferred — see status block)
 - [x] Baseline logistic regression + LightGBM
-- [ ] Evaluate with precision@K / lift over random targeting baseline
+- [x] Evaluate with precision@K / lift over random targeting baseline
 - [ ] Write `reports/02_baseline_model.md`
 
 ## Phase 3 — Explainability & Segmentation (Weeks 8–10)
@@ -607,3 +611,36 @@ entry to the working log every session, even a short one.
 - **Phase 2 baseline modeling (LR + LightGBM) is done.** Next: the formal
   precision@K evaluation — fixed contact budget K, both models vs. random
   targeting, reported once on test — then `reports/02_baseline_model.md`.
+
+### 2026-09-18 — Formal precision@K evaluation on test
+
+- Explained precision@K/recall@K (fixed contact-budget metrics, the
+  formalization of the "top-1% lift" sanity check both baselines already
+  used informally) before coding — logged in `docs/concepts_log.md`.
+- Built `src/models/evaluate_precision_at_k.py`: refits both baselines on
+  train (LightGBM still uses val for early stopping — model selection, not
+  the reported number), then scores **test exactly once**, per
+  `docs/decisions/004-three-way-split.md`. Reports precision/recall/lift
+  at five contact budgets (0.1%, 0.5%, 1%, 2%, 5% of the 2,665,623-row test
+  set) for LR, LightGBM, and a random-targeting baseline (expected
+  precision = base rate, expected recall = k_frac). Output also written to
+  `reports/baseline_precision_at_k.csv`.
+- Real finding: on **val**, LightGBM had looked clearly ahead of LR
+  (17.13x vs. LR's 14-17x top-1% lift). On **test**, the two are
+  essentially tied — at a 1% budget, LR gets 16.86x lift (8.06%
+  precision, 16.9% recall) and LightGBM gets 16.89x (8.08% precision,
+  16.9% recall); LR is actually slightly ahead at the 0.1% and 2% budgets.
+  LightGBM keeps a small edge at 0.5% and 5%. Worth carrying into the
+  `02_baseline_model.md` write-up rather than repeating the "LightGBM
+  wins" framing from the val-only sanity checks — the val gap looks like
+  it was partly noise from val's smaller adoption count (7,673 events vs.
+  test's 12,749), not a real, robust LightGBM advantage.
+- Added `tests/test_evaluate_precision_at_k.py` (4 tests on synthetic data
+  with hand-computable expected values: correct top-K ranking, a miss
+  inside the top-K, the random-targeting baseline's expected values, and
+  the comparison table's shape) — full suite now 25 tests, all passing.
+- Next: write `reports/02_baseline_model.md` (the two baselines, the
+  precision@K/recall@K table, and the val-vs-test LightGBM-tie finding
+  above), which closes out Phase 2. Then Phase 3 — SHAP on the better/
+  simpler of the two models, translated into a plain-English business
+  narrative, plus identifying an under-served high-propensity segment.
