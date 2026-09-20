@@ -47,10 +47,18 @@ entry to the working log every session, even a short one.
 > results and the val-vs-test LightGBM-tie finding are written up in
 > `reports/02_baseline_model.md` — headline: at a 1% contact budget, LR and
 > LightGBM are essentially tied (~16.9x lift), not the clear LightGBM win
-> val alone suggested. **Next up:** Phase 3 — SHAP explainability on the
-> baseline models, translated into a plain-English business narrative,
-> plus identifying an under-served, high-propensity segment. Full detail
-> (including all Phase 1/2 build steps) is in the Working Log below.
+> val alone suggested. **Phase 3 SHAP explainability is done**
+> (`src/models/explain_shap.py`, `notebooks/08_shap_explainability.ipynb`)
+> — exact Shapley values on the LightGBM baseline via `TreeExplainer`,
+> computed on val. Real finding: SHAP's global importance ranks
+> `activity_index` highest, not `product_count_prev` (Phase 2's strongest
+> raw correlation) or `age_years` (LightGBM's most-split feature) — three
+> different importance measures disagree on \#1, worth reconciling in the
+> narrative below. **Next up:** translate these drivers into a
+> plain-English business narrative, identify an under-served,
+> high-propensity segment, then `reports/03_explainability_segments.md`.
+> Full detail (including all Phase 1/2 build steps) is in the Working Log
+> below.
 
 ## Phase 0 — Setup (Week 1)
 - [x] Scaffold repo structure
@@ -77,7 +85,7 @@ entry to the working log every session, even a short one.
 - [x] Write `reports/02_baseline_model.md`
 
 ## Phase 3 — Explainability & Segmentation (Weeks 8–10)
-- [ ] SHAP values on best model
+- [x] SHAP values on best model
 - [ ] Translate top drivers into plain-English business narrative
 - [ ] Identify an under-served, high-propensity customer segment
 - [ ] Write `reports/03_explainability_segments.md`
@@ -675,3 +683,51 @@ entry to the working log every session, even a short one.
   simpler LR is easier to sanity-check SHAP against its own coefficients,
   while LightGBM's tree-based SHAP is exact and fast; no obligation to
   pick a "winner" model given today's finding.
+
+### 2026-09-20 — Phase 3: SHAP explainability on the LightGBM baseline
+
+- Picked up `src/models/explain_shap.py` and `tests/test_explain_shap.py`,
+  written the previous evening (2026-09-19) but left uncommitted and
+  undocumented - no `docs/concepts_log.md` entry, no working log entry.
+  Verified both files actually work (3 tests pass, script runs end to end
+  on the real 1.75M-row val split) before treating them as done. Explained
+  SHAP/Shapley values and `TreeExplainer` before continuing, logged in
+  `docs/concepts_log.md`.
+- SHAP is run on LightGBM, not logistic regression (LR's 18 coefficients
+  are already a complete, exact explanation of it), and computed on val,
+  not test - exploratory, not a reported metric, so no reason to spend
+  test's one-time-only guarantee (`docs/decisions/004-three-way-split.md`)
+  on it.
+- Built `notebooks/08_shap_explainability.ipynb`, following notebooks
+  05-07's pattern (importing and reusing the real functions from
+  `explain_shap.py` rather than re-deriving logic). Confirmed the
+  additivity guarantee by hand (`shap_values.sum() + expected_value`
+  reproduces each row's raw score to within 2.8e-13 across all 1,751,740
+  val rows), then compared three importance measures side by side on the
+  same val data: SHAP mean \|value\|, LightGBM's split count, and raw
+  correlation.
+- Real finding: the three rankings disagree on \#1 - SHAP ranks
+  `activity_index` highest, split count ranks `age_years` highest
+  (consistent with 2026-09-17's finding that age needs many splits to
+  trace its non-monotonic pattern), and Phase 2's raw correlation ranked
+  `product_count_prev` highest. Direction of effect (feature-vs-own-SHAP
+  correlation) agrees with LR's coefficient signs from Phase 2, so the two
+  models tell a consistent directional story, just disagree on relative
+  magnitude.
+- Second finding, caught while building a single-customer walkthrough of
+  the additivity guarantee: val's highest-scored customer (99.9997%
+  predicted probability) gets a large *positive* push from
+  `product_count_prev=0` and `activity_index=0` - both features whose
+  *global* direction is strongly positive - driven substantially by
+  `segmento_missing=True` (a rare, ~1.4%-of-rows condition). Flagged this
+  as a plausible sign of the model fitting a small, rare-combination leaf
+  rather than a reliable pattern, not swept under the rug - a caveat to
+  carry into the Phase 3 narrative: individual near-certain LightGBM
+  predictions shouldn't be taken at face value without a sanity check.
+- `docs/resume_bullets.md` bullet 3 stays `draft` - it unlocks at full
+  Phase 3 completion (SHAP + narrative + segment + report), not this step
+  alone.
+- Next: translate these drivers (activity index, tenure, product count,
+  the age_years non-monotonic pattern) into a plain-English business
+  narrative, identify an under-served, high-propensity customer segment,
+  then `reports/03_explainability_segments.md` - closing out Phase 3.

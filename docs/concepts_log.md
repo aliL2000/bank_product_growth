@@ -759,3 +759,54 @@ one model look best. Also: computed here on test, the held-out set that
 should only be scored once per `docs/decisions/004-three-way-split.md` -
 re-running this script after changing anything model-related would break
 that guarantee and needs a new decision, not a casual re-run.
+
+### 2026-09-20 — SHAP (Shapley values) via TreeExplainer
+
+**Concept**: SHAP borrows an idea from cooperative game theory - if several
+"players" (here, features) jointly produce a "payout" (here, how far a
+prediction sits from the model's average prediction), Shapley values fairly
+split credit for that payout by averaging each feature's marginal
+contribution across every possible order the features could be "revealed"
+in. `shap.TreeExplainer` computes this *exactly* for tree ensembles (by
+walking the actual tree structure) rather than approximating it by sampling
+the way a model-agnostic SHAP method would have to for an arbitrary model -
+that's what makes it fast enough to run on the full 1.75M-row val split.
+
+**Why here**: run on LightGBM, not logistic regression - LR's 18
+coefficients are already a complete, exact explanation of it (a SHAP value
+for a linear model literally reduces to `coefficient * (feature - mean)`),
+so running SHAP there would just re-derive numbers `print_coefficients`
+already prints. LightGBM is the model that's actually opaque (36 trees, no
+single global coefficient), which is what SHAP is for, and Phase 3 needs
+per-feature attribution to turn "the model works" into a plain-English
+business narrative.
+
+**How it works**: `src/models/explain_shap.py`'s `compute_shap_values`
+calls `TreeExplainer(model).shap_values(X, check_additivity=True)`. The
+additivity check is the concept's core guarantee, not just a nice-to-have:
+for every single row, `shap_values.sum(axis=1) + expected_value`
+reproduces that row's exact raw (log-odds) prediction - so this isn't just
+"which features matter on average" (LightGBM's plain `feature_importances_`
+split-count already answers that) but "why did the model score *this
+specific customer* the way it did." Global importance is then just mean
+`|SHAP value|` per feature, and direction is read from each feature's
+correlation with its own SHAP value (a compact stand-in for a beeswarm
+plot). Computed on val, not test - SHAP isn't a "reported metric" the way
+precision@K is, so there's no reason to spend test's one-time-only
+guarantee (`docs/decisions/004-three-way-split.md`) on an exploratory step.
+
+**Watch out for**: SHAP values here are on the model's raw margin (log-odds)
+scale, not probability - they sum to `(row's raw score - expected_value)`
+on that scale, and converting to probability would break the clean
+additivity property since the sigmoid isn't linear. So ranking and sign are
+trustworthy; "N percentage points" language is not. Also, a handful of the
+`*_missing` flags are near-constant in val (train's ~0.16% missing rate
+barely shows up in val's 2-month window), which makes both their raw values
+and their SHAP values have zero variance - `feature_direction`'s
+correlation is undefined there and is returned as NaN rather than a
+misleading number. Real finding from running this: `activity_index`, not
+`product_count_prev` (the strongest raw Pearson correlation since Phase 2),
+tops SHAP's global importance ranking - a reminder that a linear
+correlation and a trained nonlinear model's actual reliance on a feature
+aren't guaranteed to agree, worth digging into before writing the Phase 3
+narrative.
