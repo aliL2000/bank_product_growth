@@ -282,3 +282,137 @@ no more infra or documentation sessions until one exists.
 
 **Still open, unchanged**: [no-baseline-model-yet] (unblocked, see above),
 [eyeballed-cutoffs] (partially mitigated), [docs-outpacing-modeling].
+
+### 2026-09-21 — full `/audit` run (Phase 3, post-SHAP)
+
+**Strengths**: point-in-time joins, train-only imputation, and merge-safety
+asserts remain correct and consistent through the SHAP script as well;
+`compute_shap_values`'s `check_additivity=True` is a real correctness check,
+not decoration, and was verified by hand in notebook 08 to 2.8e-13 precision
+across all 1.75M val rows; the formal precision@K evaluation genuinely
+touches test exactly once, matching `docs/decisions/004-three-way-split.md`;
+the 2026-09-20 session's discipline of verifying uncommitted prior-evening
+code actually worked before treating it as done is a good habit worth
+keeping.
+
+**New findings**:
+
+1. **[uncalibrated-rare-leaf-scored-as-high-propensity]** The SHAP
+   walkthrough in `notebooks/08_shap_explainability.ipynb` (cell 14) flagged
+   val's single highest-scored customer (99.9997% predicted probability,
+   driven substantially by `segmento_missing=True`, `product_count_prev=0`,
+   `activity_index=0`) as "a plausible sign of the model fitting a small,
+   rare-combination leaf," but left it as a narrative caveat without
+   checking the group's actual behavior. I checked: of val's 1,751,740 rows,
+   11,123 (0.64%) share that exact profile
+   (`segmento_missing & product_count_prev==0 & activity_index==0`), and
+   their **real observed adoption rate is 0.153%** — roughly a third of
+   val's overall 0.438% rate, i.e. *below-average* propensity, not high.
+   One customer in that group got scored at near-certainty while the group
+   as a whole is a below-average segment. This is a real calibration/
+   overfitting risk on a rare feature combination (LightGBM's
+   `min_child_samples`/leaf-size defaults were never tuned or checked
+   against this), not just an interesting one-off. It matters concretely
+   because the very next roadmap step is "identify an under-served,
+   high-propensity segment" for `reports/03_explainability_segments.md`
+   and `docs/resume_bullets.md` bullet 3 — if that identification leans on
+   individual/raw model scores rather than group-level observed adoption
+   rates, this exact failure mode could surface a below-average group as
+   "high-propensity." Fix: before writing the Phase 3 narrative, screen any
+   candidate segment by its *observed* adoption rate (like the check above),
+   not predicted score alone, and consider whether `min_child_samples`/
+   `min_child_weight` need raising if spot checks turn up more rows like
+   this one.
+2. **[age-feature-doc-mismatch]** `src/models/baseline_lightgbm.py`'s
+   module docstring states LightGBM needs "no engineered `age_years_sq`,"
+   and `reports/02_baseline_model.md` line 35 repeats this as "No scaling,
+   no `age_years_sq` needed." Both are wrong: `baseline_lightgbm.py` reuses
+   `FEATURE_COLS` from `baseline_logistic_regression.py` unfiltered, so
+   `age_years_sq` *is* part of LightGBM's 18-column input, and it received
+   27 real splits — confirmed both in `notebooks/06_baseline_lightgbm.ipynb`
+   (feature-importance table, and its own more careful takeaway text: "found
+   it *without* the age_years_sq term LR needed (which still got some use -
+   27 splits - but wasn't essential)") and in `reports/shap_global_importance.csv`
+   (`age_years_sq` mean \|SHAP\| = 0.046, 7th of 18 features - not zero).
+   The report's flatter phrasing overstates the finding the notebook itself
+   already got right. Matters for Phase 3: SHAP importance for "age" is
+   currently split across two correlated columns (`age_years` 0.622 +
+   `age_years_sq` 0.046), so the plain-English narrative needs to treat
+   these as one signal, not silently drop or double-count the second one
+   because the report implies LightGBM never sees it. Fix: correct
+   `reports/02_baseline_model.md`'s wording (e.g. "included via the shared
+   feature list but not essential - 292 splits on raw `age_years` alone vs.
+   27 on `age_years_sq`") and combine the two SHAP rows when describing
+   age's overall importance in `reports/03_explainability_segments.md`.
+3. **[unchecked-flagged-caveat] (lower priority)** The 2026-09-11 working-log
+   note "product count likely correlates with tenure ... their individual
+   lifts aren't necessarily additive once combined in a model, revisit in
+   Phase 3" was never followed up in any session since - no notebook or
+   script computes this correlation. I computed it now:
+   `product_count_prev` vs. `tenure_months` Pearson r = **0.269** on train -
+   real but moderate, not severe multicollinearity, so the practical risk
+   turned out low. The process gap is the actual finding: an informal
+   "revisit later" caveat written into the Working Log has no tracking
+   mechanism the way a formal `/audit` finding does (no id, never entered
+   here), so it silently aged through three more sessions (baseline LR,
+   LightGBM, SHAP) before anyone checked it. Fix: either give
+   working-log caveats like this an id in this file when they're raised, or
+   resolve them same-session; don't leave "revisit in Phase X" as prose only.
+
+**Carried over from 2026-09-15 audit**, re-checked against current code:
+
+1. **[eyeballed-cutoffs] — STILL OPEN, unchanged.** No new evidence this
+   session; age >100 cutoff, tenure buckets, and income quintiles remain
+   eyeballed rather than data-derived.
+2. **[docs-outpacing-modeling] — RESOLVED.** Recounted: `src/` is now 2,891
+   lines (`src/models/` alone is 442 lines across 4 real modeling scripts),
+   `tests/` is 523 lines across 8 files, vs. 2,218 lines of
+   `ROADMAP.md`/`docs/concepts_log.md`/`docs/audit_log.md`/decisions/
+   resume-bullets combined. Modeling code now outweighs process docs;
+   the ratio that was flagged as worsening in 2026-09-11/09-13 has
+   inverted now that Phase 2's two baselines, the formal evaluation, and
+   Phase 3's SHAP script all actually exist.
+
+**Bottom line**: the pipeline's foundational engineering (joins, splits,
+train-only stats, tests) remains solid, but the SHAP session's own
+single-customer caveat is more serious than it was treated as - it's a
+below-average-propensity group that produced a near-certain prediction, not
+just an odd outlier - and it lands directly on top of the next roadmap step
+(segment identification). Resolve finding #1 before writing
+`reports/03_explainability_segments.md`, and fix the age_years_sq
+documentation mismatch (#2) at the same time since both touch the same
+report.
+
+### 2026-09-21 (cont'd) — status update: findings #1 and #2 fixed
+
+1. **[uncalibrated-rare-leaf-scored-as-high-propensity] — RESOLVED**, via a
+   real diagnostic rather than a documentation-only fix. Built
+   `src/models/check_calibration.py` (`calibration_at_k`/`calibration_table`
+   comparing mean predicted probability to observed rate across top-K
+   slices of val; `group_observed_vs_predicted` reproduces the flagged
+   customer's group check as a reusable function). Result: the top 0.01% of
+   val (175 rows) is genuinely 12.6x overconfident (43.2% mean predicted vs.
+   3.4% observed), but this decays fast - 1.47x by top 0.1%, ~1.2x by the
+   1-5% range the formal precision@K evaluation already validated. The
+   flagged customer's exact feature-combination group (n=11,123) is
+   well-calibrated *on average* (0.121% predicted vs. 0.153% observed) - the
+   miscalibration is a single-row leaf-overfitting artifact (that one row
+   scores 100.000%), not a group-level bias. Concrete guardrail now in place
+   for the still-upcoming Phase 3 segment work: screen any candidate segment
+   by observed group rate (as the new function does), never an individual's
+   raw predicted score. No model retuning needed - the effect is narrow and
+   doesn't touch the 1-5% contact-budget range that matters for targeting.
+   `tests/test_check_calibration.py` (5 tests) added, full suite now 33
+   tests. New concept logged in `docs/concepts_log.md`.
+2. **[age-feature-doc-mismatch] — RESOLVED.** Fixed the incorrect claim in
+   all three places it appeared: `src/models/baseline_lightgbm.py`'s
+   docstring, `reports/02_baseline_model.md`'s model comparison table, and
+   `src/reports/generate_technical_deepdive.py`'s Topic 14 text (then
+   regenerated `reports/Technical_Deep_Dive.pdf` so the resume-facing
+   artifact isn't left stale). All three now correctly state that
+   `age_years_sq` is part of LightGBM's shared 18-feature set and got light,
+   non-essential use (27 splits vs. `age_years`'s 292), rather than claiming
+   LightGBM doesn't use it at all.
+
+**Still open, unchanged**: [unchecked-flagged-caveat] (r=0.269, real but
+moderate - low priority), [eyeballed-cutoffs].

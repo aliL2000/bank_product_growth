@@ -810,3 +810,51 @@ tops SHAP's global importance ranking - a reminder that a linear
 correlation and a trained nonlinear model's actual reliance on a feature
 aren't guaranteed to agree, worth digging into before writing the Phase 3
 narrative.
+
+### 2026-09-21 — Calibration (predicted probability vs. observed rate)
+
+**Concept**: ranking metrics (ROC-AUC, precision@K, SHAP importance) only
+require that adopters sort above non-adopters on average - they say nothing
+about whether a specific predicted probability, taken at face value, is
+trustworthy. Calibration checks that directly: among rows a model assigns a
+similar predicted probability, does that probability match the group's real
+observed outcome rate? A model can rank very well while being badly
+miscalibrated at the extremes, since a handful of rare, small leaf nodes in
+a tree ensemble can be fit to very few training rows and swing to
+near-certainty without much real evidence behind it.
+
+**Why here**: `/audit` (2026-09-21) flagged that notebook 08's SHAP
+walkthrough treated val's single highest-scored customer (99.9997%
+predicted probability) as an interesting one-off, without checking whether
+that confidence was actually earned. It wasn't checked whether this was an
+isolated fluke or a sign the model overstates confidence more broadly in
+the region Phase 3's segment-identification work is about to draw from.
+
+**How it works**: `src/models/check_calibration.py`'s `calibration_at_k`
+compares mean predicted probability to observed adoption rate within the
+top-K slice of val by score, at the same K fractions
+`evaluate_precision_at_k.py` uses (plus a finer 0.01% to reach near the
+flagged customer's exact rank) - variable-width bins concentrated at the
+top, not equal-width probability bins, since adoption is rare enough that
+equal-width bins would spend nearly all their resolution on the ~99% of
+rows sitting near zero. Real result: the top 0.01% (175 val rows) is **12.6x
+overconfident** (43.2% mean predicted vs. 3.4% observed), but this decays
+fast - 1.47x by top 0.1%, and only ~1.2x by the top 1-5% range that the
+formal precision@K evaluation already validated. `group_observed_vs_predicted`
+reproduces the audit's by-hand check on the flagged customer's exact
+feature-combination group (`segmento_missing=1, product_count_prev=0,
+activity_index=0`, n=11,123): the group's *average* predicted probability
+(0.121%) actually matches its real rate (0.153%) closely - the miscalibration
+is a single-row leaf-overfitting artifact (that one row's own predicted
+probability is 100.000%), not a systematic bias in the group as a whole.
+
+**Watch out for**: this means individual near-certain LightGBM predictions
+in the extreme top of the ranking (roughly the top 0.1% or smaller) should
+not be quoted or trusted at face value - e.g. Phase 3's narrative shouldn't
+say "this customer is 99.9997% likely to adopt." Segment-level identification
+is fine as long as it screens candidates by *observed* group adoption rate
+(as `group_observed_vs_predicted` does), not by an individual's raw
+predicted score. A single Brier score would have given one aggregate
+calibration number but wouldn't have localized *where* the miscalibration
+concentrates - the top-K breakdown is what made clear the problem is narrow
+(the extreme tail) rather than pervasive.

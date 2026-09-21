@@ -54,9 +54,14 @@ entry to the working log every session, even a short one.
 > `activity_index` highest, not `product_count_prev` (Phase 2's strongest
 > raw correlation) or `age_years` (LightGBM's most-split feature) — three
 > different importance measures disagree on \#1, worth reconciling in the
-> narrative below. **Next up:** translate these drivers into a
-> plain-English business narrative, identify an under-served,
-> high-propensity segment, then `reports/03_explainability_segments.md`.
+> narrative below. **A 2026-09-21 `/audit` found extreme-tail LightGBM
+> predictions (top ~0.1%) are overconfident** (`src/models/check_calibration.py`)
+> — group-level averages stay trustworthy, so segment work should screen by
+> observed rate, not raw score — and fixed a doc mismatch about whether
+> LightGBM uses `age_years_sq` (it does, lightly). **Next up:** translate
+> SHAP drivers into a plain-English business narrative, identify an
+> under-served, high-propensity segment, then
+> `reports/03_explainability_segments.md`.
 > Full detail (including all Phase 1/2 build steps) is in the Working Log
 > below.
 
@@ -731,3 +736,52 @@ entry to the working log every session, even a short one.
   the age_years non-monotonic pattern) into a plain-English business
   narrative, identify an under-served, high-propensity customer segment,
   then `reports/03_explainability_segments.md` - closing out Phase 3.
+
+### 2026-09-21 — `/audit`, then two fixes: calibration check + age-feature doc mismatch
+
+- Ran a full `/audit`. Two findings acted on this session (see
+  `docs/audit_log.md` for full detail and third open finding
+  [unchecked-flagged-caveat], not addressed today):
+  1. **[uncalibrated-rare-leaf-scored-as-high-propensity]**: notebook 08's
+     flagged 99.9997%-confidence customer sits in a feature-combination
+     group whose real observed adoption rate (0.153%) is actually *below*
+     val's overall rate (0.438%) - a below-average group producing a
+     near-certain individual prediction, which ranking metrics can't catch.
+  2. **[age-feature-doc-mismatch]**: `baseline_lightgbm.py`'s docstring and
+     `reports/02_baseline_model.md` both claimed LightGBM doesn't use
+     `age_years_sq`, but it's part of the shared feature set and got 27
+     real splits (confirmed in notebook 06's own feature-importance table).
+- Explained calibration (predicted probability vs. observed rate, distinct
+  from ranking metrics) before coding - logged in `docs/concepts_log.md`.
+  Built `src/models/check_calibration.py`: `calibration_at_k`/
+  `calibration_table` compare mean predicted probability to observed rate
+  across top-K slices of val (finer near the top than
+  `evaluate_precision_at_k.py`'s K's, since that's where the flagged
+  customer sits); `group_observed_vs_predicted` reproduces the audit's
+  by-hand check on the flagged customer's exact feature-combination group
+  as a reusable diagnostic. Added `tests/test_check_calibration.py` (5
+  tests, hand-computable synthetic cases) - full suite now 33 tests.
+- Real result: the top 0.01% of val (175 rows) is **12.6x overconfident**
+  (43.2% mean predicted vs. 3.4% observed), decaying fast to 1.47x by top
+  0.1% and ~1.2x by the 1-5% range the formal precision@K evaluation
+  already validated. The flagged customer's group as a whole is actually
+  well-calibrated on average (0.121% predicted vs. 0.153% observed,
+  n=11,123) - the miscalibration is one single-row leaf-overfitting
+  artifact (that row alone scores 100.000%), not a systematic group bias.
+  Practical takeaway for the still-open Phase 3 narrative/segment work:
+  screen candidate segments by *observed* group rate, never an individual's
+  raw predicted score. Output: `reports/calibration_check.csv`.
+- Fixed the age-feature-doc-mismatch in all three places it appeared:
+  `src/models/baseline_lightgbm.py`'s docstring, `reports/02_baseline_model.md`,
+  and `src/reports/generate_technical_deepdive.py`'s Topic 14 text (then
+  regenerated `reports/Technical_Deep_Dive.pdf`) - all now correctly say
+  `age_years_sq` is part of LightGBM's shared feature set and got light use
+  (27 splits) rather than claiming it isn't used at all.
+- `docs/audit_log.md` updated marking both findings RESOLVED.
+- Next: [unchecked-flagged-caveat] (product_count_prev/tenure_months
+  correlation, r=0.269, real but moderate) and [eyeballed-cutoffs] remain
+  open but low-priority. Primary next step unchanged: translate SHAP
+  drivers into the Phase 3 plain-English narrative, identify an
+  under-served, high-propensity segment (now with the calibration guardrail
+  in hand - screen by observed rate, not raw score), then
+  `reports/03_explainability_segments.md`.

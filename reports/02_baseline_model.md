@@ -32,7 +32,7 @@ once, below, for the numbers that matter.
 | Model | Train ROC-AUC | Val ROC-AUC | Notes |
 |---|---|---|---|
 | Logistic regression | 0.906 | 0.912 | `class_weight="balanced"`, continuous features standardized on train-only stats. Needs `age_years_sq` (train-mean-centered) to fit age's non-monotonic peak — a plain linear term can't. |
-| LightGBM | 0.9148 | 0.9198 | No scaling, no `age_years_sq` needed — tree splits are invariant to monotonic transforms and capture non-monotonic patterns natively. `is_unbalance=True` tried and rejected: it broke early stopping (`best_iteration_ == 1`) by destabilizing boosting's round-to-round val AUC, so the model is fit **without** class reweighting. `age_years` is the single most-split feature (292 of ~1,080 splits). |
+| LightGBM | 0.9148 | 0.9198 | No scaling needed — tree splits are invariant to monotonic transforms. Shares the same 18-feature set as logistic regression (including `age_years_sq`), but doesn't rely on it: `age_years` is the single most-split feature (292 of ~1,080 splits), with `age_years_sq` getting light additional use (27 splits) rather than being essential the way it is for logistic regression's single linear term. `is_unbalance=True` tried and rejected: it broke early stopping (`best_iteration_ == 1`) by destabilizing boosting's round-to-round val AUC, so the model is fit **without** class reweighting. |
 
 Both models agree on the strongest signals: `age_years`, `tenure_months`,
 `product_count_prev`, and `activity_index` dominate (matching Phase 1 EDA
