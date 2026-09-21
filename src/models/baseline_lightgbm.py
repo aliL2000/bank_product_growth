@@ -5,8 +5,15 @@ modeling_table.parquet - directly comparable to baseline_logistic_regression.py
 Unlike logistic regression, LightGBM needs:
 - no feature scaling - tree splits are invariant to monotonic transforms of a
   feature, so raw values work as well as standardized ones.
-- no engineered `age_years_sq` - tree splits capture the non-monotonic age
-  pattern natively; `age_years` alone is enough.
+- no reliance on the engineered `age_years_sq` term. It's still part of the
+  shared FEATURE_COLS below (this model wasn't given a reduced feature set),
+  and it did get some real use (27 splits, vs. `age_years`'s 292) - but tree
+  splits capture the non-monotonic age pattern from the raw feature alone,
+  so `age_years_sq` isn't essential the way it is for logistic regression's
+  single linear term. Confirmed via `print_feature_importance` and
+  `notebooks/06_baseline_lightgbm.ipynb`'s feature-importance table - not
+  removed from FEATURE_COLS since it costs nothing to leave in and doing so
+  would break the two baselines' shared-feature-set comparability.
 - an early-stopping validation set instead of a fixed number of boosting
   rounds, since boosting can keep reducing train error indefinitely and
   start overfitting if left unchecked.

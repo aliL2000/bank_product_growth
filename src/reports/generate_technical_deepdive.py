@@ -713,9 +713,12 @@ def build():
             "model use it - logistic regression still needed an explicit "
             "age_years_sq term (centered on the train-only mean before "
             "squaring, to keep the two terms less correlated with each "
-            "other) to approximate the parabola. LightGBM needed no such "
-            "help, since tree splits find non-monotonic patterns on the "
-            "raw feature natively."
+            "other) to approximate the parabola. LightGBM shares the same "
+            "feature set and did make some use of age_years_sq (27 splits), "
+            "but far less than age_years alone (292 splits) - trees find "
+            "most of the non-monotonic pattern from the raw feature "
+            "natively, so the engineered term isn't essential there the "
+            "way it is for logistic regression's single linear term."
         ),
         links=[],
     )
