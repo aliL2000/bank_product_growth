@@ -816,3 +816,27 @@ entry to the working log every session, even a short one.
   assumptions (explicitly labeled as simulated, not real bank economics),
   then compare model-score targeting vs. the business rule found this
   session vs. contact-everyone, then `reports/04_targeting_roi.md`.
+
+### 2026-09-22 (cont'd 2) — Refreshed Project_Recap.pdf and Technical_Deep_Dive.pdf
+
+- Both audience-facing PDFs had gone stale: `Project_Recap.pdf` hadn't been
+  touched since 2026-09-16 (stopped at the LR baseline, Step 13) and
+  `Technical_Deep_Dive.pdf`'s last touch (2026-09-21) was a narrow text fix
+  - its own Part 6 still labeled LightGBM "PLANNED - decided, not yet
+    implemented" despite it being done since 2026-09-17. Caught by
+  checking file/generator mtimes and section titles directly rather than
+  trusting the 2026-09-21 timestamp alone.
+- `generate_technical_deepdive.py`: flipped Part 6 (LightGBM) from planned
+  to implemented with real results and the is_unbalance instability
+  finding folded into its "watch out for"; added Part 7 (formal
+  precision@K evaluation, the val-vs-test tie finding), Part 8 (SHAP +
+  calibration), and Part 9 (manual segmentation + Wilson score interval) -
+  topics 18-22. Rewrote the cover page and closing section to match.
+- `generate_project_recap.py`: added Steps 14-18 (LightGBM, the formal
+  test-set comparison, SHAP, calibration, segment identification) in the
+  same plain-language style as Steps 1-13, and rewrote the closing
+  "Where We Are Now" page's bullets and "Next up" for Phase 4.
+- Both regenerated cleanly (`python src/reports/generate_project_recap.py`,
+  `generate_technical_deepdive.py`) - no code changes to any pipeline
+  script, PDFs only.
+- Next: Phase 4, as above.

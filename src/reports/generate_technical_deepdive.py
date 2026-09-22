@@ -140,10 +140,9 @@ def build():
     pdf.multi_cell(
         0, 5,
         "Prepared September 2026 - covers the reasoning behind Phase 0 and "
-        "Phase 1 work, all of Phase 2's data engineering (split, feature "
-        "engineering, a self-audit fix) and its first trained model "
-        "(logistic regression), plus the decided (not yet implemented) "
-        "plan for the rest of Phase 2.",
+        "Phase 1 work, all of Phase 2 (data engineering, both baseline "
+        "models, and their formal evaluation), and all of Phase 3 "
+        "(explainability, calibration, and segment identification).",
         align="L", new_x="LMARGIN", new_y="NEXT",
     )
     pdf.ln(4)
@@ -163,13 +162,13 @@ def build():
     pdf.ln(1.5)
     pdf.multi_cell(
         0, 5.6,
-        "Sections are grouped by project phase. Part 1 through Part 5 cover "
-        "work that is done and verified against real output - Part 4 "
-        "covers Phase 2's data engineering (the three-way split, feature "
-        "engineering, and a self-audit that caught a real bug), and Part 5 "
-        "covers Phase 2's first trained model. Part 6 covers what's still "
-        "planned for the rest of Phase 2 - genuinely decided, with reasons, "
-        "but not yet written as code - and is marked accordingly.",
+        "Sections are grouped by project phase. All of it below is done and "
+        "verified against real output, not a plan - Part 4 covers Phase 2's "
+        "data engineering (the three-way split, feature engineering, and a "
+        "self-audit that caught a real bug), Parts 5-6 cover both trained "
+        "models and their formal head-to-head evaluation, and Parts 7-8 "
+        "cover Phase 3 - explainability, a calibration check, and "
+        "identifying a real customer segment worth targeting.",
         align="L", new_x="LMARGIN", new_y="NEXT",
     )
     pdf.ln(2)
@@ -848,13 +847,7 @@ def build():
 
     # ================= PART 6 =================
     pdf.add_page()
-    pdf.part_title("Part 6 - Phase 2 Plan: The Stronger Model")
-    pdf.planned_banner(
-        "Everything in this part is a decided plan with real reasoning "
-        "behind it, not yet-written code. Treat it as 'here's the plan and "
-        "why,' and expect this section to be revised once it's actually "
-        "implemented and tested against real results."
-    )
+    pdf.part_title("Part 6 - Phase 2: The Stronger Model (LightGBM)")
 
     topic_block(
         pdf, 18, "Gradient-boosted trees (LightGBM) as the stronger model",
@@ -870,9 +863,15 @@ def build():
             "Builds an ensemble of shallow decision trees sequentially: each "
             "new tree is trained to correct the residual errors of the "
             "trees built so far, and the final prediction is a weighted sum "
-            "across all trees. LightGBM's specific contribution is speed - "
-            "histogram-based split finding and leaf-wise tree growth - so "
-            "it scales well to the ~12M-row eligible population here."
+            "across all trees. Reuses the LR baseline's exact train/val "
+            "split and 18 features, with no scaling and no age_years_sq "
+            "needed - tree splits are invariant to monotonic transforms and "
+            "find non-monotonic shapes on the raw feature directly. Fit "
+            "with early stopping on val AUC (picked 36 rounds out of a "
+            "500-round budget). Result: val ROC-AUC 0.9198 (vs. LR's "
+            "0.912) and top-1% lift 17.1x (vs. LR's 14-17x) - a real, if "
+            "modest, improvement - with age_years as the single most-split "
+            "feature (292 of ~1,080 total splits)."
         ),
         alt=(
             "XGBoost or CatBoost - comparable gradient-boosting "
@@ -888,61 +887,254 @@ def build():
         watch=(
             "Much easier to overfit than logistic regression given its "
             "flexibility - needs a genuine held-out validation set (Topic "
-            "9) and sensible regularization (tree depth, minimum samples "
-            "per leaf, learning rate) rather than being trusted on "
-            "training-set performance alone."
+            "9) rather than being trusted on training-set performance "
+            "alone. A real trap hit here: is_unbalance=True (LightGBM's "
+            "version of Topic 17's class_weight='balanced') was tried "
+            "first, expecting the same benefit it gave logistic regression "
+            "- instead it broke early stopping after a single round "
+            "(best_iteration_ == 1), because the inflated rare-class "
+            "gradient made val AUC swing wildly round to round instead of "
+            "trending. Boosting fits sequentially, unlike LR's one-shot "
+            "convex optimization, so a trick that helps a linear model "
+            "doesn't automatically transfer safely - dropping the "
+            "reweighting let boosting run properly and score better on "
+            "every metric. Only checking best_iteration_ (not just the AUC "
+            "number) caught it."
         ),
         links=[
             ("LightGBM documentation", "https://lightgbm.readthedocs.io/"),
             ("Wikipedia - Gradient boosting", "https://en.wikipedia.org/wiki/Gradient_boosting"),
         ],
-        planned=True,
+    )
+
+    # ================= PART 7 =================
+    pdf.add_page()
+    pdf.part_title("Part 7 - Phase 2: Formal Evaluation")
+
+    topic_block(
+        pdf, 19, "Precision@K / recall@K vs. random targeting, on test",
+        why=(
+            "ROC-AUC measures ranking quality across the whole population, "
+            "and with a ~0.5-0.6% adoption rate, threshold-based metrics "
+            "like accuracy are useless (predicting 'no' for everyone scores "
+            ">99%). Neither answers the real business question: if the "
+            "bank can only contact K customers, how many will actually "
+            "adopt? A marketing budget is a headcount, not a probability "
+            "cutoff."
+        ),
+        how=(
+            "Both baselines are refit on train (LightGBM still uses val for "
+            "early stopping - that's model selection, not the reported "
+            "number) and scored on test exactly once, per the three-way "
+            "split's rule. At a 1% contact budget: LR gets 16.86x lift "
+            "(8.06% precision, 16.9% recall), LightGBM gets 16.89x (8.08% "
+            "precision, 16.9% recall) - essentially tied. Full table across "
+            "five budgets (0.1%-5%) in reports/02_baseline_model.md."
+        ),
+        alt=(
+            "A single global probability threshold (e.g. 'flag anyone above "
+            "50%') - rejected, since with adoption this rare almost no "
+            "customer clears a naive threshold, and the right cutoff is a "
+            "budget question anyway, not a property of the model."
+        ),
+        watch=(
+            "The real finding here: on val, LightGBM looked clearly ahead "
+            "of LR (17.13x vs. 14-17x top-1% lift). On test - the number "
+            "that actually counts - the two are essentially tied, and LR "
+            "is even slightly ahead at 0.1% and 2%. Val has only 7,673 "
+            "adoption events vs. test's 12,749, so part of the apparent gap "
+            "was noise from the smaller validation sample, not a robust "
+            "LightGBM advantage - exactly the kind of model-selection "
+            "overconfidence a three-way split (Topic 9) exists to catch."
+        ),
+        links=[],
+    )
+
+    # ================= PART 8 =================
+    pdf.add_page()
+    pdf.part_title("Part 8 - Phase 3: Explainability & Calibration")
+
+    topic_block(
+        pdf, 20, "SHAP (Shapley values) via TreeExplainer",
+        why=(
+            "LightGBM's 36-tree ensemble has no single global coefficient "
+            "the way logistic regression does - split-count importance "
+            "shows which features got used, not how much each one actually "
+            "moved a given prediction, or in which direction. SHAP, from "
+            "cooperative game theory, answers exactly that: for a specific "
+            "prediction, how much did each feature contribute, and does it "
+            "sum back to the model's real output."
+        ),
+        how=(
+            "shap.TreeExplainer computes exact Shapley values for tree "
+            "ensembles (not an approximation), run on val (exploratory, not "
+            "a reported metric, so test stays untouched). Verified the "
+            "additivity guarantee by hand: shap_values.sum() + "
+            "expected_value reproduces each row's raw score to within "
+            "2.8e-13 across all 1,751,740 val rows. Ranked by mean |SHAP "
+            "value|, activity_index comes out highest - not "
+            "product_count_prev (the strongest raw correlation) or "
+            "age_years (the most-split feature) - three different "
+            "importance measures disagreeing on #1, reconciled in "
+            "reports/03_explainability_segments.md: each measure answers a "
+            "different question (simple linear association, mechanical "
+            "split count, or actual average contribution to a prediction), "
+            "and SHAP's additivity-verified decomposition is the one to "
+            "trust when they disagree."
+        ),
+        alt=(
+            "LightGBM's built-in split-count / gain importance - kept as a "
+            "cross-check, but it only reflects how often or how "
+            "effectively a feature was used to split, not its actual "
+            "contribution magnitude, which is why it ranks age_years (a "
+            "feature needing many splits to trace a non-monotonic shape) "
+            "above activity_index (a single flag with a large uniform "
+            "effect)."
+        ),
+        watch=(
+            "SHAP values here are on the model's raw log-odds scale, not "
+            "probability - converting to probability would break the clean "
+            "additivity property, since the sigmoid isn't linear. A "
+            "second, separate finding while building a single-customer "
+            "walkthrough: val's highest-scored customer (99.9997% "
+            "predicted probability) got a large positive push from "
+            "product_count_prev=0 and activity_index=0 - features whose "
+            "global direction is strongly positive - driven by a rare "
+            "(~1.4% of rows) missing-segmento condition. That's a sign of "
+            "the model fitting a small, rare-combination leaf, not a "
+            "reliable pattern - which motivated the calibration check "
+            "below."
+        ),
+        links=[("SHAP documentation", "https://shap.readthedocs.io/")],
+    )
+
+    topic_block(
+        pdf, 21, "Calibration: predicted probability vs. observed rate",
+        why=(
+            "Ranking metrics (ROC-AUC, precision@K, SHAP importance) only "
+            "require adopters to sort above non-adopters on average - none "
+            "of them check whether a specific predicted probability, taken "
+            "at face value, is trustworthy. A model can rank well while "
+            "being badly miscalibrated in a small, rare corner of feature "
+            "space, exactly what the SHAP walkthrough's flagged customer "
+            "(Topic 20) suggested might be happening."
+        ),
+        how=(
+            "src/models/check_calibration.py compares mean predicted "
+            "probability to observed adoption rate within variable-width "
+            "top-K slices of val by score (concentrated at the top, where "
+            "adoption is rare enough that equal-width probability bins "
+            "would waste nearly all their resolution near zero). Real "
+            "result: the top 0.01% of val (175 rows) is 12.6x overconfident "
+            "(43.2% mean predicted vs. 3.4% observed), decaying fast to "
+            "1.47x by the top 0.1% and only ~1.2x by the 1-5% range the "
+            "formal precision@K evaluation already validated."
+        ),
+        alt=(
+            "A single aggregate calibration number (e.g. a Brier score) - "
+            "would have given one overall figure but not located *where* "
+            "the miscalibration concentrates. The top-K breakdown is what "
+            "made clear the problem is narrow (the extreme tail) rather "
+            "than pervasive."
+        ),
+        watch=(
+            "The flagged customer's feature-combination group as a whole "
+            "turned out to be well-calibrated on average (0.121% predicted "
+            "vs. 0.153% observed, n=11,123) - the miscalibration was one "
+            "single-row leaf-overfitting artifact (that row alone scores "
+            "100.000%), not a systematic group bias. Practical rule "
+            "carried into segment identification (Part 9): screen "
+            "candidates by a group's real observed rate, never by an "
+            "individual's raw predicted score."
+        ),
+        links=[],
+    )
+
+    # ================= PART 9 =================
+    pdf.add_page()
+    pdf.part_title("Part 9 - Phase 3: Segment Identification")
+
+    topic_block(
+        pdf, 22, "Manual feature-cross segmentation + the Wilson score interval",
+        why=(
+            "Phase 3's remaining deliverable is an under-served (few "
+            "existing products), high-propensity (likely to adopt) "
+            "customer segment for Phase 4 to build a targeting rule "
+            "around. Those two conditions pull in opposite directions by "
+            "construction - product_count_prev is the strongest positive "
+            "driver in the model, so 'few products' mechanically means "
+            "lower propensity against the whole population. It also can't "
+            "be found by trusting a raw model score, per the calibration "
+            "finding above."
+        ),
+        how=(
+            "src/models/identify_segments.py buckets val customers into a "
+            "product tier (0 / 1 / 2+ existing products), segmento, "
+            "activity flag, and a 6-band age group - four features already "
+            "verified as the strongest signals, so every resulting group "
+            "is directly explainable rather than an opaque cluster ID. "
+            "Each group's observed rate is screened against its own "
+            "product tier's baseline (not the overall population), and "
+            "ranked by a 95% Wilson score interval's lower bound rather "
+            "than the raw rate - the Wilson formula stays accurate for "
+            "rare-event proportions where the usual 'rate +/- 1.96 x "
+            "standard error' interval breaks down. Result: active, "
+            "segmento=particulares customers holding exactly one product, "
+            "aged 35-64, adopt at 5.20x their product tier's baseline rate "
+            "(4.72x on the conservative lower-bound estimate), n=113,858 "
+            "val rows / 410 adoptions - and not a lucky single cell, since "
+            "the same three-way combination ranked in the top 5 across "
+            "every age band tested."
+        ),
+        alt=(
+            "Unsupervised clustering (k-means / hierarchical) - rejected "
+            "because clusters aren't guaranteed to land on business-"
+            "interpretable axes; a cluster's meaning still has to be "
+            "explained after the fact. A manual cross of already-verified "
+            "strong features is simpler, fully interpretable, and directly "
+            "reusable as a business rule."
+        ),
+        watch=(
+            "Testing many group combinations at once (128 groups here) "
+            "means some will look good purely by chance - the Wilson lower "
+            "bound guards against the worst single-group version of this "
+            "(a small group getting lucky), but doesn't eliminate the "
+            "multiple-comparisons problem entirely. A flat n >= 5,000 "
+            "minimum group size was picked to keep ~20+ expected adopters "
+            "given this project's rare base rate, not derived from a "
+            "formal power calculation."
+        ),
+        links=[
+            ("Wikipedia - Binomial proportion confidence interval (Wilson score)",
+             "https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval"),
+        ],
     )
 
     # ================= CLOSING =================
     pdf.add_page()
-    pdf.part_title("Looking Further Ahead (Phase 3-4, not yet detailed)")
+    pdf.part_title("Looking Further Ahead (Phase 4, not yet detailed)")
     pdf.set_font("Helvetica", "", 10.5)
     pdf.set_text_color(*DARK)
     pdf.multi_cell(
         0, 5.6,
-        "Two further phases are on the roadmap but not yet designed in "
-        "enough detail to document at this depth:",
+        "One further phase is on the roadmap but not yet designed in "
+        "enough detail to document at this depth: Phase 4 will attach a "
+        "deliberately-labeled simulated cost-per-contact and "
+        "value-per-adoption to turn the ranked model output - and Part 9's "
+        "segment - into an actual targeting recommendation, comparing "
+        "model-score targeting, the business-rule segment found in Part 9, "
+        "and a contact-everyone baseline.",
         align="L", new_x="LMARGIN", new_y="NEXT",
     )
-    pdf.ln(1)
-    pdf.set_font("Helvetica", "", 10.5)
-    x0 = pdf.get_x()
-    pdf.cell(4, 5.6, "-")
-    pdf.multi_cell(
-        pdf.epw - 4, 5.6,
-        "Phase 3 plans to use SHAP (Shapley values, from cooperative game "
-        "theory) to explain what's actually driving the trained model's "
-        "predictions in a way that's faithful to that specific model, "
-        "rather than a generic feature-importance heuristic.",
-        align="L", new_x="LMARGIN", new_y="NEXT",
-    )
-    pdf.set_x(x0)
-    pdf.cell(4, 5.6, "-")
-    pdf.multi_cell(
-        pdf.epw - 4, 5.6,
-        "Phase 4 will attach a deliberately-labeled simulated "
-        "cost-per-contact and value-per-adoption to turn the ranked model "
-        "output into an actual targeting recommendation, compared against a "
-        "simple business-rule baseline and a contact-everyone baseline.",
-        align="L", new_x="LMARGIN", new_y="NEXT",
-    )
-    pdf.ln(2)
-    pdf.learn_more([("SHAP documentation", "https://shap.readthedocs.io/")])
 
     pdf.ln(2)
     pdf.set_font("Helvetica", "I", 9.5)
     pdf.set_text_color(*GRAY)
     pdf.multi_cell(
         0, 5,
-        "This document reflects project state as of September 2026 (through "
-        "Phase 2's data engineering and its first trained model, a "
-        "logistic regression baseline). "
+        "This document reflects project state as of September 2026, "
+        "through the end of Phase 3 (explainability, calibration, and "
+        "segment identification). "
         "For the running, dated log of every concept as it's introduced, "
         "see docs/concepts_log.md in the repository; for the "
         "plain-language project narrative, see Project_Recap.pdf.",

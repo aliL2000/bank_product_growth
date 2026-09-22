@@ -126,8 +126,9 @@ def build():
     pdf.set_font("Helvetica", "I", 9.5)
     pdf.multi_cell(
         0, 5,
-        "Prepared September 2026 - covers sessions from project kickoff through "
-        "Phase 2's first trained model (a baseline logistic regression)",
+        "Prepared September 2026 - covers sessions from project kickoff "
+        "through the end of Phase 3 (explainability and segment "
+        "identification)",
         align="L", new_x="LMARGIN", new_y="NEXT",
     )
     pdf.ln(4)
@@ -645,6 +646,174 @@ def build():
         "so it's actually incentivized to tell the two groups apart."
     )
 
+    # --- Step 14: LightGBM ---
+    pdf.add_page()
+    pdf.numbered_step(
+        14,
+        "Trained a second, more powerful model",
+        "Logistic regression's weighted checklist is simple and readable, "
+        "but it can only really combine facts in a straight-line way. The "
+        "project's second model, LightGBM, works differently: imagine a "
+        "series of specialists reviewing the same customer one after "
+        "another, where each new specialist's entire job is to catch the "
+        "mistakes the specialists before them collectively made. Their "
+        "combined judgment becomes the final prediction. This lets the "
+        "model pick up on patterns the checklist approach can't, like "
+        '"age matters, but in a peaks-in-the-middle way" or "tenure '
+        'matters more for customers who are currently active" - without '
+        "anyone having to spell those patterns out by hand.",
+    )
+    pdf.callout(
+        "A real snag hit along the way:",
+        "A standard trick for rare-event problems (give the rare outcome "
+        "more weight, used successfully on the first model) was tried here "
+        "too - and it backfired. It made this model's training process "
+        "stop improving after a single round, mistaking early noise for "
+        "having already found the best answer. Removing the trick let "
+        "training actually run properly, and the model ended up doing "
+        "better without it. The lesson: a technique that helps one kind of "
+        "model can quietly break a structurally different one, and it's "
+        "worth checking, not assuming.",
+    )
+    pdf.body(
+        "Result: this model correctly identifies the real adopter, when "
+        "compared against a non-adopter, about 92% of the time (versus the "
+        "first model's 91%) - a real but modest improvement, with "
+        '"currently active" as its single most relied-upon fact.'
+    )
+
+    # --- Step 15: formal test evaluation ---
+    pdf.add_page()
+    pdf.numbered_step(
+        15,
+        "Formally graded both models on the data neither had ever seen",
+        "For months, this project had deliberately kept one slice of data "
+        '("test") completely untouched, precisely so it could be used for '
+        "one honest, final grade instead of a practice-round estimate. "
+        "This step scored both models against that untouched slice, "
+        "exactly once, and compared them the way the business would "
+        'actually use them: "if we can only contact our top X% of '
+        'customers by predicted likelihood, how many of them really do '
+        'adopt?"',
+    )
+    pdf.callout(
+        "The real finding here mattered more than the numbers themselves:",
+        "During earlier practice-round comparisons, the second model "
+        "(LightGBM) looked like the clear winner. On the untouched test "
+        "data - the grade that actually counts - the two models turned out "
+        "to be essentially tied, and the simpler first model was even "
+        "slightly ahead at a couple of budget levels. The practice round "
+        "had fewer real adoption examples to compare against, so part of "
+        'the earlier "LightGBM wins" impression was just noise, not a real '
+        "advantage. This is exactly the kind of overconfident, too-early "
+        "conclusion that keeping data genuinely untouched is meant to "
+        "catch.",
+    )
+    pdf.body(
+        "Headline result: contacting the bank's top 1% most-likely-scored "
+        "customers reaches roughly 1 in 6 of everyone who would actually "
+        "adopt that quarter, with about 1 in 12 of those contacted turning "
+        "out to be a real adopter - a ~17x improvement over calling the "
+        "same number of customers at random. This result closed out Phase "
+        "2 of the project."
+    )
+
+    # --- Step 16: SHAP explainability ---
+    pdf.add_page()
+    pdf.numbered_step(
+        16,
+        "Explained exactly what drives an individual prediction",
+        "A model like LightGBM doesn't have one readable checklist the way "
+        "logistic regression does - it's built from 36 of the "
+        '"specialists" from Step 14, working together. To open that up, '
+        "the project used a technique called SHAP, which has a "
+        "mathematical guarantee: for any single customer, it splits their "
+        "predicted score into exactly how much each individual fact about "
+        "them pushed the prediction up or down - and those pieces add up "
+        "precisely to the real prediction (checked by hand across 1.75 "
+        "million customers, accurate to a tiny fraction of a percent).",
+    )
+    pdf.body(
+        "The result was a genuine surprise: the single biggest driver of a "
+        "specific prediction turned out to be whether the customer is "
+        "currently active with the bank - not how many products they "
+        "already hold, which had looked like the strongest single pattern "
+        "back in Step 6's exploration, and not their age, which needed the "
+        "most internal adjustments from the model to get right. Three "
+        "different ways of measuring \"what matters most\" each gave a "
+        "different #1 answer - explained in full in "
+        "reports/03_explainability_segments.md - because each one is "
+        "really answering a slightly different question. SHAP's answer is "
+        "the one to trust for \"what actually moves a real prediction,\" "
+        "since it's the only one of the three that's a verified, exact "
+        "breakdown of the model's own output rather than a rough proxy for "
+        "it."
+    )
+
+    # --- Step 17: calibration check ---
+    pdf.add_page()
+    pdf.numbered_step(
+        17,
+        "Checked whether the model's confidence can actually be trusted",
+        'A model saying "this customer is 99.9997% likely to adopt" sounds '
+        "impressive - but is that number actually earned, or is it an "
+        "overstatement? This step checked: among the customers the model "
+        "was most confident about, does the real, observed adoption rate "
+        "actually back that confidence up?",
+    )
+    pdf.callout(
+        "What was found:",
+        "For the tiniest sliver of most-confident customers (the top "
+        "0.01%, about 175 people), the model was about 12.6x overconfident "
+        "- it predicted around 43% on average, but the real observed rate "
+        "was closer to 3%. That overconfidence faded fast: by the top 1-5% "
+        "of customers, which is the realistic range a real marketing "
+        "budget would actually use, the model's confidence matched reality "
+        "closely.",
+    )
+    pdf.body(
+        "Practical takeaway carried into the next step: it's fine to trust "
+        'the model\'s group-level averages and its overall ranking, but a '
+        "single customer's extreme individual score - especially "
+        'somewhere in the very top sliver - shouldn\'t be quoted or acted '
+        "on at face value."
+    )
+
+    # --- Step 18: segment identification ---
+    pdf.add_page()
+    pdf.numbered_step(
+        18,
+        "Found a specific, real customer segment worth prioritizing",
+        "The last piece of this phase turned everything learned so far "
+        'into something actionable: which specific group of customers '
+        "should the bank actually prioritize for credit card outreach? "
+        'The two conditions that matter - "under-served" (doesn\'t have '
+        'many bank products yet) and "high-propensity" (likely to say '
+        'yes) - turned out to genuinely pull against each other, since '
+        "Step 16 found that holding more products is one of the strongest "
+        "signals of adopting another one. So instead of comparing "
+        "under-served customers to the whole customer base (which found "
+        "nothing useful), the project compared under-served customers "
+        "against each other - who, among people with few products, "
+        "converts relatively well?",
+    )
+    pdf.callout(
+        "The segment found:",
+        "Customers who are currently active, in the bank's \"particulares\" "
+        "customer segment, already hold exactly one product, and are aged "
+        "35-64. This group converts to credit card holders at roughly 5x "
+        "the rate of other similar one-product customers - and it's a "
+        "large, real group (over 110,000 customers in just this sample), "
+        "not a fluke. A statistical technique that specifically discounts "
+        "patterns found in small, unreliable samples (rather than just "
+        "trusting a raw percentage) was used to confirm this wasn't just "
+        "luck.",
+    )
+    pdf.body(
+        "This closed out Phase 3, and gives Phase 4 a concrete, plain-"
+        "English targeting rule to compare against the model's raw score."
+    )
+
     # --- Final page: status + next ---
     pdf.add_page()
     pdf.section_title("Where We Are Now, and What's Next")
@@ -684,32 +853,50 @@ def build():
         "distort any model trained on it."
     )
     pdf.bullet(
-        "The first real predictive model - logistic regression - is "
-        "trained and checked: it correctly ranks a real adopter above a "
-        "non-adopter about 91% of the time, and its top 1% highest-scored "
-        "customers adopt at roughly 15 times the average rate."
+        "Two models were trained and formally compared on data neither had "
+        "ever seen: logistic regression and LightGBM turned out to be "
+        "essentially tied, with the top 1% highest-scored customers "
+        "adopting at roughly 17 times the rate you'd get by contacting "
+        "customers at random."
+    )
+    pdf.bullet(
+        "The winning model's predictions were opened up and explained: "
+        "whether a customer is currently active with the bank is the "
+        "single biggest driver of an individual prediction - a genuine "
+        "surprise, since it wasn't the strongest pattern found in earlier "
+        "exploration."
+    )
+    pdf.bullet(
+        "The model's confidence was checked against reality, not just "
+        "trusted: it's accurate in the realistic 1-5% outreach range, but "
+        "overconfident for the tiny sliver of its single most-confident "
+        "predictions - so individual extreme scores aren't taken at face "
+        "value."
+    )
+    pdf.bullet(
+        "A specific, real customer segment worth prioritizing was found: "
+        "active, single-product customers aged 35-64 in the bank's "
+        '"particulares" segment, who convert to credit card holders at '
+        "roughly 5x the rate of similar customers - large enough (over "
+        "110,000 customers in this sample) to be a genuine target, "
+        "confirmed with a statistical check against it being a fluke."
     )
     pdf.ln(1)
     pdf.set_font("Helvetica", "B", 11.5)
     pdf.set_text_color(*TEAL)
-    pdf.cell(0, 7, "Phase 1 is complete. Phase 2 is nearly done.", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 7, "Phases 1 through 3 are complete.", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(2)
     pdf.set_font("Helvetica", "B", 12)
     pdf.set_text_color(*TEAL)
     pdf.cell(0, 7, "Next up", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(1)
     pdf.body(
-        "Train a second, more powerful model (LightGBM, a technique known "
-        "to do well on this kind of data) on the exact same data, then "
-        "formally compare both models using a \"top-K\" evaluation "
-        "(how good is the model at its actual job - ranking the customers "
-        "most worth contacting) against a random-targeting baseline, "
-        "reported once on the untouched test set."
-    )
-    pdf.body(
-        "After that: explaining what drives the model's predictions in plain "
-        "English (Phase 3), and turning it into an actual targeting "
-        "recommendation with a rough cost/benefit estimate (Phase 4)."
+        "Phase 4: attach a deliberately-labeled, simulated cost-per-contact "
+        "and value-per-adoption to turn the model's ranking - and the "
+        "segment found in Step 18 - into an actual targeting "
+        "recommendation, comparing model-score targeting, the plain-"
+        "English business rule found above, and a contact-everyone "
+        "baseline."
     )
     pdf.set_font("Helvetica", "I", 9.5)
     pdf.set_text_color(*GRAY)
