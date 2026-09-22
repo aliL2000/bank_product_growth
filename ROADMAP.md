@@ -4,66 +4,23 @@
 entry to the working log every session, even a short one.
 
 > **Status at a glance (update this block every session — keep it to ~5 lines):**
-> **Phase 1 is complete.** Service A is decided (credit card,
-> `ind_tjcr_fin_ult1`; see `docs/decisions/001-service-a-product-choice.md`),
-> the adoption label is built (`data/processed/adoption_labels_tjcr.parquet`,
-> gitignored — rerun `src/features/build_adoption_label.py` if missing), and
-> the EDA notebook + findings write-up are done (`notebooks/01_eda.ipynb`,
-> `reports/01_eda_findings.md`) — strongest signals found: activity index,
-> tenure, segmento.
-> **Time-respecting train/val split is done** (`data/processed/train_val_split.parquet`,
-> gitignored — rerun `src/features/train_val_split.py` if missing; last 3
-> labeled months as val, see `docs/decisions/002-train-val-split.md`).
-> **Phase 2 feature engineering: Groups 1-3 done** — tenure/activity, product
-> count (strongest signal, ~0.163 correlation), and demographics
-> (age/sex/segmento/income) are all built and sanity-checked.
-> `canal_entrada` (162-category channel column) is deliberately deferred,
-> not built — revisit only if baseline model evaluation suggests it's
-> needed. **Modeling population is now restricted to eligible non-holders**
-> (`prev_flag == 0`) — split and all three feature files were rebuilt after
-> `/audit` found already-holders contaminating the negative class (see
-> `docs/decisions/003-eligibility-filter.md`). **All `data/processed/`
-> intermediates are now Parquet** (~7x smaller than the old CSVs), and a
-> `tests/` suite (13 pytest tests, runnable from VSCode's Test Explorer)
-> covers the label-merge and feature-join logic. **Split is now 3-way**
-> (train 11 months / val 2 months / test 3 months, see
-> `docs/decisions/004-three-way-split.md`) so val can be used for model
-> selection without biasing the final reported number. **Environment is
-> installed and pinned** (`requirements.txt`, all versions confirmed
-> working together — `pip install -r requirements.txt` is sufficient).
-> **Modeling table is assembled** (`data/processed/modeling_table.parquet`,
-> gitignored — rerun `src/features/build_modeling_table.py` if missing):
-> 12,111,689 rows x 23 columns, one row per eligible labeled customer-month
-> with `split`, `adoption` (target), and all Phase 2 features. **Age's
-> correlation was re-checked with a per-bin lift table** (not just Pearson)
-> per `/audit`'s [correlation-yardstick-vs-nonmonotonic-feature] finding —
-> confirmed a real, strong non-monotonic pattern (peaks 45-50 at 2.04x the
-> overall rate), so `age_years_sq` (train-mean-centered) was added to
-> `build_features_demographics.py` so logistic regression can fit it too.
-> **Phase 2 is now fully complete**, including the baseline models
-> (`src/models/baseline_logistic_regression.py`, `baseline_lightgbm.py`)
-> and the formal precision@K/recall@K evaluation vs. random targeting,
-> reported once on test (`src/models/evaluate_precision_at_k.py`). Full
-> results and the val-vs-test LightGBM-tie finding are written up in
-> `reports/02_baseline_model.md` — headline: at a 1% contact budget, LR and
-> LightGBM are essentially tied (~16.9x lift), not the clear LightGBM win
-> val alone suggested. **Phase 3 SHAP explainability is done**
-> (`src/models/explain_shap.py`, `notebooks/08_shap_explainability.ipynb`)
-> — exact Shapley values on the LightGBM baseline via `TreeExplainer`,
-> computed on val. Real finding: SHAP's global importance ranks
-> `activity_index` highest, not `product_count_prev` (Phase 2's strongest
-> raw correlation) or `age_years` (LightGBM's most-split feature) — three
-> different importance measures disagree on \#1, worth reconciling in the
-> narrative below. **A 2026-09-21 `/audit` found extreme-tail LightGBM
-> predictions (top ~0.1%) are overconfident** (`src/models/check_calibration.py`)
-> — group-level averages stay trustworthy, so segment work should screen by
-> observed rate, not raw score — and fixed a doc mismatch about whether
-> LightGBM uses `age_years_sq` (it does, lightly). **Next up:** translate
-> SHAP drivers into a plain-English business narrative, identify an
-> under-served, high-propensity segment, then
-> `reports/03_explainability_segments.md`.
-> Full detail (including all Phase 1/2 build steps) is in the Working Log
-> below.
+> **Phases 1-3 are complete.** Service A = credit card
+> (`docs/decisions/001-service-a-product-choice.md`). Modeling table:
+> `data/processed/modeling_table.parquet`, 12,111,689 eligible
+> customer-months x 23 columns, 3-way time-respecting split
+> (`docs/decisions/004-three-way-split.md`). Baselines (LR + LightGBM) are
+> essentially tied on test, ~16.9x lift at a 1% contact budget
+> (`reports/02_baseline_model.md`). SHAP + a segment-identification pass
+> are done: `activity_index` is the top driver by actual prediction impact
+> (not `product_count_prev`'s raw correlation or `age_years`'s split
+> count — three measures disagree, reconciled in the report); the flagged
+> segment is active, `particulares`-segment, single-product customers aged
+> 35-64, converting at ~5x other single-product customers
+> (`reports/03_explainability_segments.md`). **Next up:** Phase 4 —
+> simulated targeting ROI (cost/value assumptions, model-score vs.
+> business-rule vs. contact-everyone).
+> Full detail (all Phase 1-3 build steps, audit fixes, and findings) is in
+> the Working Log below.
 
 ## Phase 0 — Setup (Week 1)
 - [x] Scaffold repo structure
@@ -91,9 +48,9 @@ entry to the working log every session, even a short one.
 
 ## Phase 3 — Explainability & Segmentation (Weeks 8–10)
 - [x] SHAP values on best model
-- [ ] Translate top drivers into plain-English business narrative
-- [ ] Identify an under-served, high-propensity customer segment
-- [ ] Write `reports/03_explainability_segments.md`
+- [x] Translate top drivers into plain-English business narrative
+- [x] Identify an under-served, high-propensity customer segment
+- [x] Write `reports/03_explainability_segments.md`
 
 ## Phase 4 — Targeting Strategy & Simulated ROI (Weeks 11–13)
 - [ ] Define cost-per-contact and value-per-adoption assumptions (explicitly labeled
@@ -785,3 +742,77 @@ entry to the working log every session, even a short one.
   under-served, high-propensity segment (now with the calibration guardrail
   in hand - screen by observed rate, not raw score), then
   `reports/03_explainability_segments.md`.
+
+### 2026-09-22 — Segment identification (under-served, high-propensity)
+
+- Explained the approach before coding: manual feature-cross segmentation
+  (not clustering) on the four features Phase 1-3 already verified as the
+  strongest signals, plus a Wilson score interval so small-n groups can't
+  win by chance - the group-level version of the calibration audit's
+  row-level finding. Both concepts logged in `docs/concepts_log.md`.
+- Built `src/models/identify_segments.py` on val (not test, exploratory -
+  same reasoning as SHAP/calibration): buckets customers into
+  `product_tier` (0/1/2+), `segmento_label`, `activity_label`, and a
+  6-band `age_band`, then ranks under-served (tier 0/1) groups with
+  n >= 5,000 by the Wilson lower bound relative to their own tier's
+  baseline rate, not the overall population rate.
+- Real finding along the way: ranking against the *overall* val rate
+  produced nothing useful - every under-served candidate scored below 1x,
+  since `product_count_prev` is Phase 2's strongest positive driver and
+  "few products" mechanically pulls against "high overall-population
+  propensity." Switched to ranking against each tier's *own* baseline
+  rate instead, which answers the actual business question (among
+  under-served customers, who converts relatively well) and immediately
+  surfaced a clean result.
+- **Segment found**: active, `segmento=particulares` customers holding
+  exactly one product, ages 35-64 - observed adoption rate 0.360% vs. the
+  one-product tier's 0.069% baseline (5.20x lift, 4.72x on the
+  conservative Wilson-lower-bound estimate), n=113,858 val rows / 410
+  adoptions. Not a single lucky cell: the top 5 ranked candidates were the
+  same 3-way combination (tier=1, particulares, active) repeated across 5
+  age bands with a smooth lift decline moving away from the strongest
+  ages - a coherent pattern, not scattered multiple-comparisons noise.
+  Side-note: `segmento=top` never appears among under-served candidates -
+  TOP-segment customers rarely hold 0-1 products in the first place (only
+  8,567 val rows total across every age/activity combination), so no
+  individual cell clears the n >= 5,000 threshold.
+- Added `tests/test_identify_segments.py` (8 tests: Wilson bound vs. a
+  known reference value, bound-tightens-with-n, product-tier bucketing,
+  segmento labeling, and a deliberately constructed pair proving the
+  ranking favors a large reliable group over a small lucky one with a
+  higher raw rate) - full suite now 41 tests, all passing.
+- Output: `reports/segment_candidates.csv` (24 under-served candidates
+  with n >= 5,000, full stats).
+- Next: translate SHAP's drivers (activity index, tenure, product count,
+  age's non-monotonic pattern) together with this segment into the Phase 3
+  plain-English business narrative, then `reports/03_explainability_segments.md`
+  - closing out Phase 3.
+
+### 2026-09-22 (cont'd) — `reports/03_explainability_segments.md`, closing out Phase 3
+
+- Wrote `reports/03_explainability_segments.md`, following `01`/`02`'s
+  format: SHAP driver table + plain-English read, a reconciliation of the
+  three importance rankings that disagree (raw correlation, LightGBM split
+  count, SHAP mean\|value\|) - explained as three different questions, not
+  a contradiction, with SHAP as the one to trust since it's an exact,
+  additivity-verified decomposition rather than a proxy - the calibration
+  guardrail (top 0.01% of val 12.6x overconfident, decaying to ~1.2x by
+  1-5%), the segment found last session with its full numbers and caveats,
+  and a closing business-narrative paragraph plus implications for Phase 4.
+- No new code - synthesis of findings already produced across the
+  2026-09-20/21/22 sessions (SHAP, calibration, segment identification).
+  Double-checked exact numbers against source (`reports/shap_global_importance.csv`,
+  re-ran LightGBM's `feature_importances_` directly) rather than trusting
+  the working log's prose summaries, since the report is the artifact
+  meant to be read on its own later.
+- Flipped `docs/resume_bullets.md` bullet 3 from `draft` to `verified` -
+  replaced its placeholder status with the real SHAP-vs-correlation
+  finding and the segment's actual numbers, same pattern as bullets 1-2 at
+  Phase 2 close.
+- **Phase 3 is now fully complete.** Compressed the ROADMAP status block
+  accordingly (detail now lives in `reports/02_baseline_model.md`,
+  `reports/03_explainability_segments.md`, and this Working Log).
+- Next: Phase 4 - define simulated cost-per-contact / value-per-adoption
+  assumptions (explicitly labeled as simulated, not real bank economics),
+  then compare model-score targeting vs. the business rule found this
+  session vs. contact-everyone, then `reports/04_targeting_roi.md`.

@@ -858,3 +858,62 @@ predicted score. A single Brier score would have given one aggregate
 calibration number but wouldn't have localized *where* the miscalibration
 concentrates - the top-K breakdown is what made clear the problem is narrow
 (the extreme tail) rather than pervasive.
+
+### 2026-09-22 — Manual segment identification + Wilson score interval
+
+**Concept**: two related techniques used together in
+`src/models/identify_segments.py`. First, manual feature-cross segmentation
+- partitioning customers into groups by combinations of a few known-strong
+features (rather than an unsupervised clustering algorithm) and comparing
+each group's real outcome rate. Second, the Wilson score interval - a
+formula for a confidence interval on a binomial proportion (an observed
+rate, like a group's adoption rate) that stays accurate for rare events and
+small samples, unlike the standard "rate ± 1.96 × standard error" interval.
+
+**Why here**: Phase 3's last deliverable is an under-served, high-propensity
+customer segment for Phase 4 to build a targeting rule around. "Under-served"
+(few existing products) and "high-propensity" (likely to adopt) pull in
+opposite directions, since Phase 2 found `product_count_prev` is the
+strongest single adoption driver - so this can't be found by just sorting
+customers by predicted score. It also has to avoid the exact mistake the
+2026-09-21 `/audit` calibration finding caught: trusting a rate estimated
+from too few rows. A segment built the same way (eyeballing a promising-
+looking small group) would repeat that mistake at the group level instead
+of the row level.
+
+**How it works**: `build_group_columns` buckets every val row into a
+`product_tier` (0 / 1 / 2+ existing products), `segmento_label`,
+`activity_label` (active/inactive), and a 6-band `age_band` - four features
+Phase 1-3 already established as the strongest, individually-verified
+signals, so every resulting group is directly explainable rather than an
+opaque cluster ID. `group_stats` computes each group's `n`, observed rate,
+and a **Wilson lower bound**: `wilson_lower_bound(x, n)` where `x` is
+adoptions and `n` is group size. The formula (`(phat + z²/2n ± z·√(phat(1-phat)/n
++ z²/4n²)) / (1 + z²/n)`, z=1.96 for 95% confidence) is a "what's the
+smallest true rate consistent with what was observed" question - a group of
+10 rows with 3 adopters (30% raw rate) gets a *wide* interval reaching down
+near 11%, while a group of 10,000 rows with 300 adopters (the same 30% raw
+rate) gets a *narrow* interval close to 30%, because there's far more
+evidence behind the second estimate. `rank_underserved_segments` filters to
+the under-served tiers with `n >= 5,000` (~20+ expected adopters at this
+project's rare base rate) and ranks by the lower bound divided by that
+tier's own baseline rate - not the raw observed rate - so a small group that
+got a lucky handful of adopters can't outrank a larger, real pattern.
+Verified in `tests/test_identify_segments.py` with a deliberately
+constructed pair (8/100 = 8% raw rate vs. 550/10,000 = 5.5% raw rate) where
+the *lower* raw rate has the *higher* Wilson lower bound, and confirmed the
+ranking follows the lower bound, not the raw rate.
+
+**Watch out for**: testing many group combinations at once (128 groups
+here) means some will look good purely by chance - the Wilson lower bound
+guards against the worst single-group version of this (a small group
+getting lucky), but doesn't eliminate the multiple-comparisons problem
+entirely. The real result found this session helps here: the top 5 ranked
+candidates weren't 5 unrelated lucky cells, they were the *same* 3-way
+combination (product_tier=1, segmento=particulares, active) repeated across
+5 different age bands with a smooth decline in lift moving away from the
+strongest ages - a coherent pattern, not scattered noise, which is much
+harder to explain away as multiple-comparisons luck. Also: min_n=5,000 is a
+flat threshold, not a statistically derived one - it was picked to keep
+roughly 20+ expected adopters per group given this project's ~0.4-0.6% base
+rate, not tuned to any formal power calculation.
