@@ -28,7 +28,7 @@ entry to the working log every session, even a short one.
 - [x] Draft `README.md`, `docs/dataset.md`, `docs/problem_statement.md`
 - [x] Write `src/data/load_data.py` loader skeleton
 - [x] Download `train_ver2.csv` / `test_ver2.csv` into `data/raw/`
-- [ ] Set up GitHub remote and push
+- [x] Set up GitHub remote and push
 
 ## Phase 1 — Understand the Data (Weeks 2–4)
 - [x] Run `load_data.py` against real data, check shape/dtypes/memory footprint
@@ -840,3 +840,21 @@ entry to the working log every session, even a short one.
   `generate_technical_deepdive.py`) - no code changes to any pipeline
   script, PDFs only.
 - Next: Phase 4, as above.
+
+### 2026-09-23 — Bookkeeping + AI-pipeline discussion (no code changes)
+
+- Ticked Phase 0's stale "Set up GitHub remote and push" checkbox (the push
+  was done 2026-07-29, and `main` is in sync with `origin/main`).
+- Closed `[unchecked-flagged-caveat]` in `docs/audit_log.md` as
+  checked/documented/accepted (r=0.269, recorded in `reports/03`'s
+  Caveats). `[eyeballed-cutoffs]` is the only open audit finding left, and
+  it's low priority.
+- Discussed whether an LLM pipeline/agent fits this project. Conclusion:
+  keep it out of modeling and ROI assumptions (tabular data, and the
+  assumptions must be human-owned). A possible Phase 5 add-on is an LLM
+  *workflow* (not an agent) that turns each top-K customer's SHAP drivers
+  into a grounded call note, with an automated faithfulness check. Not
+  committed to yet.
+- Next: Phase 4 - define simulated cost-per-contact / value-per-adoption
+  assumptions, then compare model-score vs. business-rule vs.
+  contact-everyone targeting.

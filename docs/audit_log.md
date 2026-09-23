@@ -416,3 +416,17 @@ report.
 
 **Still open, unchanged**: [unchecked-flagged-caveat] (r=0.269, real but
 moderate - low priority), [eyeballed-cutoffs].
+
+### 2026-09-23 — status update (no new /audit run; bookkeeping only)
+
+1. **[unchecked-flagged-caveat] — RESOLVED (checked, documented, accepted).**
+   The caveat was checked on 2026-09-21 (`product_count_prev` /
+   `tenure_months` r=0.269, moderate) and is now recorded as a known
+   limitation of the segment finding in
+   `reports/03_explainability_segments.md`'s Caveats section. No modeling
+   change is warranted: LightGBM handles correlated features fine for
+   ranking. The only risk is over-reading the segment's lift as
+   product-count-only, and the report already says so.
+
+**Still open, unchanged**: [eyeballed-cutoffs] (low priority; listed as a
+known limitation in `reports/03_explainability_segments.md`).
