@@ -16,9 +16,10 @@ entry to the working log every session, even a short one.
 > count — three measures disagree, reconciled in the report); the flagged
 > segment is active, `particulares`-segment, single-product customers aged
 > 35-64, converting at ~5x other single-product customers
-> (`reports/03_explainability_segments.md`). **Next up:** Phase 4 —
-> simulated targeting ROI (cost/value assumptions, model-score vs.
-> business-rule vs. contact-everyone).
+> (`reports/03_explainability_segments.md`). **Phase 4 in progress:**
+> simulated ROI assumptions set (`docs/decisions/005-simulated-roi-assumptions.md`,
+> break-even precision 1.67%). Next: model-score vs. business-rule vs.
+> contact-everyone profit comparison on test.
 > Full detail (all Phase 1-3 build steps, audit fixes, and findings) is in
 > the Working Log below.
 
@@ -53,7 +54,7 @@ entry to the working log every session, even a short one.
 - [x] Write `reports/03_explainability_segments.md`
 
 ## Phase 4 — Targeting Strategy & Simulated ROI (Weeks 11–13)
-- [ ] Define cost-per-contact and value-per-adoption assumptions (explicitly labeled
+- [x] Define cost-per-contact and value-per-adoption assumptions (explicitly labeled
       as simulated, not real bank economics)
 - [ ] Compare: model-score targeting vs. simple business rule vs. contact-everyone
 - [ ] Write `reports/04_targeting_roi.md`
@@ -858,3 +859,26 @@ entry to the working log every session, even a short one.
 - Next: Phase 4 - define simulated cost-per-contact / value-per-adoption
   assumptions, then compare model-score vs. business-rule vs.
   contact-everyone targeting.
+
+### 2026-09-23 (cont'd) — Phase 4 step 1: simulated ROI assumptions
+
+- Explained expected contact-list profit, break-even precision, and why a
+  propensity model needs an explicit uplift assumption (it predicts
+  adoption, not *caused* adoption). Logged in `docs/concepts_log.md`.
+- Adam chose the base case: email/in-app at €0.50/contact, €150 net value
+  per incremental adoption, 20% relative uplift. Break-even precision is
+  **1.67%**: the model's test precision (8.6% at a 0.1% budget, 5.1% at 5%)
+  clears it, and contact-everyone (0.48%) doesn't. Phone (€6) has a 20%
+  break-even, so it's unprofitable at any budget; that goes in as a
+  sensitivity result. Recorded in
+  `docs/decisions/005-simulated-roi-assumptions.md`, including why relative
+  uplift makes propensity ranking optimal *by assumption* (the report must
+  say so).
+- Added `src/models/roi_assumptions.py` (base case + sweep values,
+  `break_even_precision`, `simulated_profit`) as the single source of
+  these numbers, plus `tests/test_roi_assumptions.py` (5 tests). Full suite
+  is now 46 tests, all passing.
+- Next: Phase 4 step 2 - on test, compute simulated profit per strategy:
+  model-score top-K across budgets, the Phase 3 segment rule (active,
+  particulares, 1 product, 35-64) as a fixed list, and contact-everyone.
+  Then the sensitivity sweep over cost/value/uplift.

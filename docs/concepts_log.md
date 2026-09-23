@@ -917,3 +917,36 @@ harder to explain away as multiple-comparisons luck. Also: min_n=5,000 is a
 flat threshold, not a statistically derived one - it was picked to keep
 roughly 20+ expected adopters per group given this project's ~0.4-0.6% base
 rate, not tuned to any formal power calculation.
+
+### 2026-09-23 — Break-even precision + relative uplift (simulated targeting ROI)
+
+**Concept**: expected profit of a contact list, the break-even precision it
+implies, and why an explicit *uplift* assumption is needed on top of a
+propensity model.
+
+**Why here**: Phase 2's precision@K table shows how good the ranking is at
+each budget but can't say which budget to use, because it has no costs in
+it. Phase 4 needs a money yardstick to compare model-score targeting,
+the Phase 3 segment rule, and contact-everyone.
+
+**How it works**: contacting K customers costs `K × cost`. If contact raises
+each customer's adoption chance by a relative `u`, the list earns
+`u × adopters_captured × value`. Divide both sides by K and a list is
+profitable only when `precision × u ≥ cost / value`. The right side is the
+**break-even precision**: every budget whose precision@K clears it makes
+money, and every one below it loses money. Base case (decision record 005):
+0.50 / (0.20 × 150) = 1.67%. The model's test precision is 8.6% at a 0.1%
+budget and 5.1% at 5% (clears it); contact-everyone is the 0.48% base rate
+(doesn't). Phone at €6 gives a 20% break-even, above anything the model
+achieves. Code: `src/models/roi_assumptions.py`.
+
+**Watch out for**: a propensity model predicts who *adopts*, not who adopts
+*because of the contact*. Counting every captured adopter as a campaign win
+credits the campaign with customers who'd have adopted anyway, the classic
+way propensity ROI gets overstated. The relative-`u` assumption fixes the
+counting but quietly assumes high-propensity customers are also the most
+persuadable. In reality the top of the list is often "sure things" with
+the *lowest* true uplift. Measuring that needs uplift modeling on
+experimental (contacted vs. not) data, which this dataset doesn't have. So
+`u` is swept (5-40%) rather than trusted, and every profit figure is
+labeled simulated.
