@@ -950,3 +950,46 @@ the *lowest* true uplift. Measuring that needs uplift modeling on
 experimental (contacted vs. not) data, which this dataset doesn't have. So
 `u` is swept (5-40%) rather than trusted, and every profit figure is
 labeled simulated.
+
+### 2026-09-29 — Profit curves, marginal vs. cumulative precision, and choosing a budget without tuning on test
+
+**Concept**: plotting simulated profit against contact budget for a ranked
+list, finding its peak, and choosing that peak on a split other than the
+one the number is reported on. Plus the equal-budget comparison between
+strategies.
+
+**Why here**: Phase 4 has to say *how many* customers to contact and
+whether the model beats the Phase 3 business rule. Phase 2's fixed budgets
+(0.1-5%) couldn't answer either question.
+
+**How it works**: walk down the list in score order. Each extra contact
+costs €0.50 and earns `0.20 × €150 × P(adopt)` on average. Profit keeps
+rising while the **marginal** customer's adoption rate is above the 1.67%
+break-even, and starts falling once it drops below. The **cumulative**
+precision of the whole list doesn't decide this. On val, cumulative
+precision at a 10% budget is still 3.2% (above break-even), but profit has
+already started falling (€81.5K at 7.5% → €79.0K at 10%). The customers
+added between 7.5% and 10% convert at only ~1.5%.
+The profit-maximizing budget is picked on **val** (7.5%) and frozen, and
+test profit is reported at that budget. Test's own peak is also 7.5%, but
+it's printed for context only. Reporting test's own peak would be the same
+mistake as tuning hyperparameters on test. Code:
+`src/models/targeting_roi.py`.
+Equal-budget comparison: the segment rule contacts a fixed 6.67% of test,
+so the model is also scored at exactly that list size. At that size, the
+rule captures 672 adopters (0.38% precision, **−€68.7K**) and the model
+captures 7,736 (4.35%, **+€143.2K**).
+
+**Watch out for**: (1) comparing strategies at different list sizes mixes
+up "picks better people" with "contacts more people". Always add an
+equal-budget row. (2) A segment chosen for **relative** lift (5x its own
+product tier) can still sit below break-even in **absolute** terms. The
+Phase 3 segment converts at 0.38%, *below* the population's 0.48%, because
+one-product customers convert at only ~0.07%. "Under-served and relatively
+promising" is not the same as "worth paying to contact". (3) The budget
+grid is coarse near the peak (5% / 7.5% / 10%), so "7.5%" means "somewhere
+between 5% and 10%". Profit is flat there (±€3-5K), so the exact point
+matters less than it looks. (4) All of this is the base case only. Uplift
+is the least-known input, and the curve's peak moves when it changes (a
+lower uplift raises break-even and shrinks the best budget). That's the
+sensitivity sweep's job.

@@ -18,8 +18,10 @@ entry to the working log every session, even a short one.
 > 35-64, converting at ~5x other single-product customers
 > (`reports/03_explainability_segments.md`). **Phase 4 in progress:**
 > simulated ROI assumptions set (`docs/decisions/005-simulated-roi-assumptions.md`,
-> break-even precision 1.67%). Next: model-score vs. business-rule vs.
-> contact-everyone profit comparison on test.
+> break-even precision 1.67%). Base-case strategy comparison done on test
+> (`src/models/targeting_roi.py`): model top-7.5% (budget chosen on val)
+> +€146.5K simulated, segment rule −€68.7K, contact-everyone −€950K.
+> Next: sensitivity sweep over cost/value/uplift, then `reports/04`.
 > Full detail (all Phase 1-3 build steps, audit fixes, and findings) is in
 > the Working Log below.
 
@@ -56,7 +58,7 @@ entry to the working log every session, even a short one.
 ## Phase 4 — Targeting Strategy & Simulated ROI (Weeks 11–13)
 - [x] Define cost-per-contact and value-per-adoption assumptions (explicitly labeled
       as simulated, not real bank economics)
-- [ ] Compare: model-score targeting vs. simple business rule vs. contact-everyone
+- [x] Compare: model-score targeting vs. simple business rule vs. contact-everyone
 - [ ] Write `reports/04_targeting_roi.md`
 
 ## Phase 5 — Polish (Weeks 14–16)
@@ -882,3 +884,38 @@ entry to the working log every session, even a short one.
   model-score top-K across budgets, the Phase 3 segment rule (active,
   particulares, 1 product, 35-64) as a fixed list, and contact-everyone.
   Then the sensitivity sweep over cost/value/uplift.
+
+### 2026-09-29 — Phase 4 step 2: base-case strategy comparison on test
+
+- Explained profit curves, marginal vs. cumulative precision (profit peaks
+  where the *next* customer's rate falls to break-even, not the list's
+  average), choosing the budget on val instead of test, and equal-budget
+  comparison. Logged in `docs/concepts_log.md`.
+- Added `src/models/targeting_roi.py`: refits LightGBM (same setup as
+  Phase 2), builds val and test profit curves over 0.05%-10% budgets,
+  picks the profit-maximizing budget on val (7.5%), and compares strategies
+  on test. The segment mask reuses `identify_segments.build_group_columns`,
+  so it can't drift from Phase 3's definition. Plus
+  `tests/test_targeting_roi.py` (5 tests). Full suite is now 51, all passing.
+- Test results (base case, all simulated):
+
+  | Strategy | Contacted | Precision | Profit |
+  |---|---|---|---|
+  | Model top-K @ val-chosen 7.5% | 199,920 | 4.11% | +€146,520 |
+  | Segment rule | 177,720 (6.67%) | 0.38% | −€68,700 |
+  | Model @ segment's list size | 177,720 | 4.35% | +€143,220 |
+  | Contact everyone | 2,665,623 | 0.48% | −€950,342 |
+
+- Finding: the Phase 3 segment **loses money**. It was selected for 5x lift
+  over *other one-product customers*, but in absolute terms it converts
+  below the population average (0.38% vs. 0.48%) and far below the 1.67%
+  break-even. At the same list size, the model finds 11.5x more adopters.
+  This answers Phase 3's open question (is the rule redundant with the
+  model?) in a different way than expected: the rule isn't a competitor
+  to the model under these economics at all.
+- Outputs: `reports/targeting_profit_curve.csv`,
+  `reports/targeting_strategy_comparison.csv`.
+- Next: Phase 4 step 3 - sensitivity sweep (phone cost, €50/€300 value,
+  5/10/40% uplift) re-running the val-chosen budget under each scenario,
+  then write `reports/04_targeting_roi.md` (incl. the "ranking is optimal
+  by assumption" caveat from decision 005).
