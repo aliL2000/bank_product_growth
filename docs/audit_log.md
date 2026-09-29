@@ -430,3 +430,98 @@ moderate - low priority), [eyeballed-cutoffs].
 
 **Still open, unchanged**: [eyeballed-cutoffs] (low priority; listed as a
 known limitation in `reports/03_explainability_segments.md`).
+
+### 2026-09-29 — full `/audit` run (Phase 4 complete, uncommitted)
+
+Scope: everything since the 2026-09-21 audit, mainly
+`src/models/roi_assumptions.py`, `src/models/targeting_roi.py`,
+`tests/test_targeting_roi.py`, `reports/04_targeting_roi.md`, and how
+consistent reports 03/04 and the recap PDF generator are with each other.
+Checked with a read-only scratch script (refit LightGBM, same seed).
+
+**Strengths**: budget chosen on val with test's peak shown only as
+context. Verified regret is tiny: test profit €147,902 at the val-chosen
+K vs. €149,153 at test's own peak (0.8%). Reusing val for early stopping
+and budget choice didn't inflate anything (precision at the chosen budget:
+val 3.69% < test 4.06%). Carrying over a score threshold instead of a
+fraction gives €148,192, so the result doesn't hinge on that choice.
+`in_segment` reproduces Phase 3's val counts exactly (113,858 rows / 410
+adoptions). Only 52 rows are tied at the top-K cutoff (negligible). The
+equal-budget row is the right comparison.
+
+**New findings**:
+
+1. **[customer-month-vs-customer-grain]** The modeling table is one row
+   per customer-month (`ncodpers` × `fecha_dato`), and test pools 3
+   months, but report 04 describes lists in "customers". The 206,276
+   "contacts" at the val-chosen budget are only **79,154 distinct
+   customers** (8.8% of 901,395). **58,650 are contacted in all 3 months**
+   and 9,822 in 2. The segment rule's 177,720 rows are 67,430 customers.
+   The same issue predates Phase 4: the Phase 3 segment's 113,858 val rows
+   are **61,705 customers**, yet `generate_project_recap.py:806` says
+   "over 110,000 customers" and report 03's narrative says "114K".
+   Why it matters: (a) the headline wording is wrong by ~2.6x on reach,
+   which an interviewer can catch. (b) The 20% relative uplift is applied
+   again to every repeat monthly email to the same person, the most
+   generous possible assumption (no fatigue, no diminishing effect).
+   (c) The ±€2.7K noise estimate treats clustered rows as independent.
+   Mitigating: ranking within each month separately gives the identical
+   €147,902, so pooling doesn't distort the monthly budget split. Fix:
+   restate results as a monthly campaign (~69K contacts/month, ~79K
+   distinct customers over 3 months). Add a sensitivity where only a
+   customer's first contact earns uplift (repeats cost but don't help).
+   Correct the "customers" counts in report 03 and the recap PDF.
+2. **[stale-phase3-outreach-claims]** Report 03 (line 8: "segment the bank
+   should prioritize for credit card outreach"; lines 140-147: "the
+   clearest opportunity for outreach… a genuine outreach target") and
+   `generate_project_recap.py:800-814` still present the segment as an
+   outreach recommendation. Phase 4 shows it loses money in all 24
+   scenarios. A reader who opens report 03 or the PDF alone gets the
+   opposite recommendation. Fix: add a dated "superseded by Phase 4" note
+   to report 03's narrative and implications (don't rewrite history),
+   update and regenerate the PDFs, and resolve resume bullet 3 (already
+   flagged in `docs/resume_bullets.md`).
+3. **[segment-overlap-unreported]** Phase 3 left open whether the model
+   already ranks the segment highly. Computed: **0 of 177,720 segment rows
+   fall inside the model's top 7.74%.** That's the most direct answer to
+   the question, and the model's own logic explains it (single-product
+   customers have low scores). Report 04 answers only through profit.
+   Fix: add the overlap number (and where segment rows sit in the ranking,
+   e.g. median percentile) to report 04's segment section.
+4. **[min-campaign-floor-eyeballed]** (low) `MIN_CAMPAIGN_SIZE = 1000`
+   is argued, not tested. At a floor of 2,000 the three borderline sweep
+   rows (−€97, −€1,164 ×2) become €0 ("don't contact"). Report 04 quotes
+   "−€1,164" as the model's worst result, which is an artifact of the
+   floor. No conclusion changes. Fix: note in the report that those rows
+   depend on the floor, or state "≈ break-even / don't run".
+
+**Carried over**, re-checked against current code:
+
+1. **[eyeballed-cutoffs] — STILL OPEN**, one new instance
+   (`MIN_CAMPAIGN_SIZE`, finding 4). Age >100, tenure buckets and income
+   quintiles are unchanged.
+
+No other open items. Every earlier finding is RESOLVED per prior entries.
+
+### 2026-09-29 (cont'd) — status update: findings #1-#3 fixed
+
+1. **[customer-month-vs-customer-grain] — RESOLVED.** `targeting_roi.py`
+   reports distinct customers and a first-contact-only profit next to the
+   original. Report 04 now separates contacts (customer-months) from
+   customers throughout and gives profit as a range (base case €40K–€148K).
+   Report 03, both PDF generators and resume bullet 4 carry corrected
+   counts. The noise caveat now says row-level binomial noise understates
+   the real noise. Not done (deliberately): a per-customer contact-cap
+   strategy. That's a different campaign design, noted as a deployment
+   recommendation in report 04.
+2. **[stale-phase3-outreach-claims] — RESOLVED** for reports and PDFs
+   (dated superseded note in report 03; recap Step 18 retitled + Phase 4
+   callout; deep-dive closing replaced; both regenerated). Resume bullet 3's
+   wording is still flagged in `docs/resume_bullets.md`, pending Adam.
+3. **[segment-overlap-unreported] — RESOLVED.** `segment_overlap()`: 3 of
+   177,720 segment rows in the model's top 7.74%, median rank percentile
+   22.6%. In report 04 and report 03's resolution note.
+
+**Still open**: [min-campaign-floor-eyeballed] (low; the floor dependence
+of the three borderline rows is now stated in report 04),
+[eyeballed-cutoffs] (low).
