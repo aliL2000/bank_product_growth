@@ -9,9 +9,11 @@ import pytest
 from models.targeting_roi import (
     best_budget_frac,
     compare_strategies,
+    exact_profit_curve,
     in_segment,
     list_result,
     profit_curve,
+    sensitivity_sweep,
     top_k_mask,
 )
 
@@ -42,7 +44,48 @@ def test_profit_curve_peaks_where_marginal_contacts_stop_paying():
     scores = -np.arange(1000, dtype=float)
     curve = profit_curve(y, scores, budget_fracs=[0.005, 0.01, 0.02])
     assert curve["profit_eur"].tolist() == pytest.approx([147.5, 295.0, 290.0])
-    assert best_budget_frac(curve) == pytest.approx(0.01)
+    assert best_budget_frac(y, scores, min_campaign_size=1) == pytest.approx(0.01)
+
+
+def test_exact_profit_curve_starts_at_zero_and_steps_per_contact():
+    # K=0 -> 0; each adopter +EUR 29.50 net (30 - 0.50), each non-adopter -0.50.
+    y = np.array([1, 0, 1])
+    scores = np.array([0.9, 0.8, 0.1])
+    assert exact_profit_curve(y, scores).tolist() == pytest.approx([0.0, 29.5, 29.0, 58.5])
+
+
+def test_best_budget_is_zero_when_no_contact_can_pay():
+    # Phone cost EUR 6 with no adopters at all: contacting anyone loses money.
+    y = np.zeros(100, dtype=int)
+    assert best_budget_frac(y, np.random.default_rng(0).random(100), cost_per_contact=6.0) == 0.0
+
+
+def test_best_budget_can_be_everyone_when_break_even_is_below_base_rate():
+    # 50% base rate, break-even 1.67%, and the lowest-scored customer is an
+    # adopter: every stretch of the list pays, so the best list is everyone.
+    y = np.array([0, 1] * 50)
+    assert best_budget_frac(y, -np.arange(100, dtype=float), min_campaign_size=1) == pytest.approx(1.0)
+
+
+def test_best_budget_ignores_tiny_lucky_lists_below_the_floor():
+    # Top 2 customers include 1 adopter (50% precision), then 998 non-adopters.
+    # Without a floor the argmax picks that 2-row list; with a floor of 100
+    # no real campaign pays, so the answer is "don't contact anyone".
+    y = np.zeros(1000, dtype=int)
+    y[0] = 1
+    scores = -np.arange(1000, dtype=float)
+    assert best_budget_frac(y, scores, min_campaign_size=1) == pytest.approx(0.001)
+    assert best_budget_frac(y, scores, min_campaign_size=100) == 0.0
+
+
+def test_sensitivity_sweep_has_one_row_per_scenario():
+    rng = np.random.default_rng(0)
+    y = (rng.random(500) < 0.05).astype(int)
+    scores = y + rng.random(500)
+    segment = rng.random(500) < 0.1
+    sweep = sensitivity_sweep(y, scores, y, scores, segment)
+    assert len(sweep) == 2 * 3 * 4
+    assert not sweep.duplicated(["channel", "value_per_adoption", "uplift"]).any()
 
 
 def test_compare_strategies_scores_model_at_the_segments_list_size():

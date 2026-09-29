@@ -18,10 +18,11 @@ entry to the working log every session, even a short one.
 > 35-64, converting at ~5x other single-product customers
 > (`reports/03_explainability_segments.md`). **Phase 4 in progress:**
 > simulated ROI assumptions set (`docs/decisions/005-simulated-roi-assumptions.md`,
-> break-even precision 1.67%). Base-case strategy comparison done on test
-> (`src/models/targeting_roi.py`): model top-7.5% (budget chosen on val)
-> +€146.5K simulated, segment rule −€68.7K, contact-everyone −€950K.
-> Next: sensitivity sweep over cost/value/uplift, then `reports/04`.
+> break-even precision 1.67%). Strategy comparison + 24-scenario sensitivity
+> sweep done on test (`src/models/targeting_roi.py`): base case model
+> top-7.74% (budget chosen on val) +€147.9K simulated, segment rule −€68.7K,
+> contact-everyone −€950K; segment rule loses money in all 24 scenarios.
+> **Phase 4 complete** (`reports/04_targeting_roi.md`). Next: Phase 5 polish.
 > Full detail (all Phase 1-3 build steps, audit fixes, and findings) is in
 > the Working Log below.
 
@@ -59,7 +60,7 @@ entry to the working log every session, even a short one.
 - [x] Define cost-per-contact and value-per-adoption assumptions (explicitly labeled
       as simulated, not real bank economics)
 - [x] Compare: model-score targeting vs. simple business rule vs. contact-everyone
-- [ ] Write `reports/04_targeting_roi.md`
+- [x] Write `reports/04_targeting_roi.md`
 
 ## Phase 5 — Polish (Weeks 14–16)
 - [ ] Lightweight Streamlit dashboard
@@ -885,37 +886,49 @@ entry to the working log every session, even a short one.
   particulares, 1 product, 35-64) as a fixed list, and contact-everyone.
   Then the sensitivity sweep over cost/value/uplift.
 
-### 2026-09-29 — Phase 4 step 2: base-case strategy comparison on test
+### 2026-09-29 — Phase 4 steps 2-3: strategy comparison + sensitivity sweep
 
-- Explained profit curves, marginal vs. cumulative precision (profit peaks
-  where the *next* customer's rate falls to break-even, not the list's
-  average), choosing the budget on val instead of test, and equal-budget
-  comparison. Logged in `docs/concepts_log.md`.
+- Explained profit curves (profit peaks where the *next* customer's rate
+  falls to break-even, not the list's average), choosing the budget on val
+  instead of test, equal-budget comparison, and full-grid sensitivity
+  analysis (the best list depends only on break-even precision). Two
+  entries in `docs/concepts_log.md`.
 - Added `src/models/targeting_roi.py`: refits LightGBM (same setup as
-  Phase 2), builds val and test profit curves over 0.05%-10% budgets,
-  picks the profit-maximizing budget on val (7.5%), and compares strategies
-  on test. The segment mask reuses `identify_segments.build_group_columns`,
-  so it can't drift from Phase 3's definition. Plus
-  `tests/test_targeting_roi.py` (5 tests). Full suite is now 51, all passing.
-- Test results (base case, all simulated):
+  Phase 2), finds the profit-maximizing budget on val's **exact** curve
+  (every K, with a 1,000-contact minimum campaign size so a lucky 2-row
+  list can't win), and compares strategies on test for the base case and
+  all 24 cost × value × uplift scenarios. The segment mask reuses
+  `identify_segments.build_group_columns`, so it can't drift from Phase 3.
+  Plus `tests/test_targeting_roi.py` (10 tests). Full suite: 56, all passing.
+- Base case on test (all simulated):
 
   | Strategy | Contacted | Precision | Profit |
   |---|---|---|---|
-  | Model top-K @ val-chosen 7.5% | 199,920 | 4.11% | +€146,520 |
+  | Model top-K @ val-chosen 7.74% | 206,276 | 4.06% | +€147,902 |
   | Segment rule | 177,720 (6.67%) | 0.38% | −€68,700 |
-  | Model @ segment's list size | 177,720 | 4.35% | +€143,220 |
+  | Model @ segment's list size | 177,720 | 4.35% | +€143,250 |
   | Contact everyone | 2,665,623 | 0.48% | −€950,342 |
 
-- Finding: the Phase 3 segment **loses money**. It was selected for 5x lift
-  over *other one-product customers*, but in absolute terms it converts
-  below the population average (0.38% vs. 0.48%) and far below the 1.67%
-  break-even. At the same list size, the model finds 11.5x more adopters.
-  This answers Phase 3's open question (is the rule redundant with the
-  model?) in a different way than expected: the rule isn't a competitor
-  to the model under these economics at all.
-- Outputs: `reports/targeting_profit_curve.csv`,
-  `reports/targeting_strategy_comparison.csv`.
-- Next: Phase 4 step 3 - sensitivity sweep (phone cost, €50/€300 value,
-  5/10/40% uplift) re-running the val-chosen budget under each scenario,
-  then write `reports/04_targeting_roi.md` (incl. the "ranking is optimal
-  by assumption" caveat from decision 005).
+- Findings: (1) the Phase 3 segment **loses money in all 24 scenarios**.
+  It was picked for 5x lift over other one-product customers, but in
+  absolute terms it converts below the population average (0.38% vs.
+  0.48%). At the same list size, the model finds 11.5x more adopters.
+  (2) The model is profitable in every email scenario with break-even
+  ≤ 6.67%, and never loses more than ~€1.2K (the borderline ~10%
+  break-even cases). (3) Contact-everyone pays only when break-even drops
+  below the base rate (€300 × 40%). Even then the model earns 5.6x more.
+  (4) Phone pays only at the most optimistic value and uplift (€300, 40%).
+- Mid-session fix: the first sweep run showed "0.00% budget, 50%
+  precision" rows. The exact argmax was picking 2-3 lucky customers.
+  Added `MIN_CAMPAIGN_SIZE`.
+- Outputs (gitignored): `reports/targeting_profit_curve.csv`,
+  `targeting_strategy_comparison.csv`, `targeting_sensitivity_sweep.csv`.
+- Wrote `reports/04_targeting_roi.md`: base case + equal-budget row, why
+  the segment rule fails (relative vs. absolute lift), the full email sweep
+  table + phone summary, caveats (ranking optimal by assumption, no real
+  economics, rough sampling noise ~±€2.7K per SD, test read but never used
+  for a choice, 36-65 age-band edges), plain-English narrative, and Phase 5
+  implications. Phase 4 is complete.
+- Next: Phase 5 - pick between the executive one-pager, the interview
+  cheat sheet, or the Streamlit dashboard (sliders over cost/value/uplift
+  would reuse `exact_profit_curve` directly).

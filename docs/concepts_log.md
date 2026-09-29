@@ -967,18 +967,19 @@ costs €0.50 and earns `0.20 × €150 × P(adopt)` on average. Profit keeps
 rising while the **marginal** customer's adoption rate is above the 1.67%
 break-even, and starts falling once it drops below. The **cumulative**
 precision of the whole list doesn't decide this. On val, cumulative
-precision at a 10% budget is still 3.2% (above break-even), but profit has
-already started falling (€81.5K at 7.5% → €79.0K at 10%). The customers
-added between 7.5% and 10% convert at only ~1.5%.
-The profit-maximizing budget is picked on **val** (7.5%) and frozen, and
-test profit is reported at that budget. Test's own peak is also 7.5%, but
-it's printed for context only. Reporting test's own peak would be the same
+precision at a 10% budget is still 3.2% (above break-even), but profit is
+already falling: the customers added between 7.5% and 10% convert at only
+~1.5%.
+The peak is found on the **exact** curve (cumulative adopters at every K,
+then argmax), not a coarse budget grid. It's picked on **val** (7.74%) and
+frozen, and test profit is reported at that budget (+€147.9K). Test's own
+peak (8.36%) is printed for context only. Reporting it would be the same
 mistake as tuning hyperparameters on test. Code:
 `src/models/targeting_roi.py`.
 Equal-budget comparison: the segment rule contacts a fixed 6.67% of test,
 so the model is also scored at exactly that list size. At that size, the
 rule captures 672 adopters (0.38% precision, **−€68.7K**) and the model
-captures 7,736 (4.35%, **+€143.2K**).
+captures 7,737 (4.35%, **+€143.3K**).
 
 **Watch out for**: (1) comparing strategies at different list sizes mixes
 up "picks better people" with "contacts more people". Always add an
@@ -986,10 +987,49 @@ equal-budget row. (2) A segment chosen for **relative** lift (5x its own
 product tier) can still sit below break-even in **absolute** terms. The
 Phase 3 segment converts at 0.38%, *below* the population's 0.48%, because
 one-product customers convert at only ~0.07%. "Under-served and relatively
-promising" is not the same as "worth paying to contact". (3) The budget
-grid is coarse near the peak (5% / 7.5% / 10%), so "7.5%" means "somewhere
-between 5% and 10%". Profit is flat there (±€3-5K), so the exact point
-matters less than it looks. (4) All of this is the base case only. Uplift
-is the least-known input, and the curve's peak moves when it changes (a
-lower uplift raises break-even and shrinks the best budget). That's the
-sensitivity sweep's job.
+promising" is not the same as "worth paying to contact". (3) An exact
+argmax over every K will happily pick a 2-customer list that got lucky
+(50% "precision") when no real campaign pays. A minimum campaign size
+(`MIN_CAMPAIGN_SIZE = 1000`, ~90 expected adopters at the model's top
+precision) turns that into the honest answer: "don't run it". This is the
+same small-n problem the Wilson interval handled in Phase 3.
+
+### 2026-09-29 — Sensitivity analysis (full grid) and why only break-even precision matters
+
+**Concept**: rerunning the whole decision under every combination of the
+uncertain assumptions (2 costs × 3 values × 4 uplifts = 24 scenarios) to
+see whether the conclusion survives, instead of trusting one base case.
+
+**Why here**: every ROI input is simulated (decision record 005), and
+uplift is essentially unknowable without an experiment. A single profit
+number would be a guess dressed as a finding. The question that matters is
+"under which assumptions does the recommendation change?"
+
+**How it works**: for each scenario, pick the budget on val (exact curve,
+same floor), then report each strategy's test profit. Full grid rather than
+one-at-a-time (a tornado chart), because assumptions interact: low value
+*and* low uplift together can sink a campaign that survives either alone,
+and with 24 cheap scenarios the grid costs nothing extra.
+Shortcut: `profit = u·V·(adopters − K·c/(u·V))`. The best list depends
+**only** on break-even precision `c/(u·V)`, and u·V just scales profit.
+The sweep confirms it: email/€50/20% and phone/€300/40% both have a 5%
+break-even, so both pick the same 2.20% budget, and the phone profit
+(€139,170) is exactly 12x the email one (€11,597.50) because u·V is 12x
+larger. The 24 scenarios are really 15 distinct break-evens.
+Results (test, all simulated): the model is never worse than "don't
+contact" by more than ~€1.2K in any scenario, and is profitable in every
+email scenario with break-even ≤ 6.67%. The segment rule loses money in
+**all 24**. Contact-everyone is profitable in only one (€300, 40% uplift:
+break-even 0.42%, below the 0.48% base rate). Even there the model earns
+5.6x more (€1.11M vs. €197K). Phone (€6) needs break-even ≤ 5% to pay
+at all, which only happens at the most optimistic value and uplift.
+
+**Watch out for**: (1) a sweep shows how *sensitive* the answer is, not
+which scenario is *true*. Don't quote the best-case row as "the" profit.
+(2) Borderline scenarios (break-even ~10%, just above the model's best
+precision) pick a tiny val list that's barely profitable and then lose a
+little on test (−€97, −€1,164). That's normal out-of-sample regression at
+the margin. The right reading is "break-even", not "profitable". (3) Every
+scenario still uses relative uplift, so ranking by score is optimal *by
+assumption* (decision 005). The sweep varies how big uplift is, never
+*who* is persuadable.
