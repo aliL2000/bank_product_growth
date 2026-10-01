@@ -20,8 +20,10 @@ entry to the working log every session, even a short one.
 > simulated ROI assumptions set (`docs/decisions/005-simulated-roi-assumptions.md`,
 > break-even precision 1.67%). Strategy comparison + 24-scenario sensitivity
 > sweep done on test (`src/models/targeting_roi.py`): base case model
-> top-7.74% (budget chosen on val) +€147.9K simulated, segment rule −€68.7K,
-> contact-everyone −€950K; segment rule loses money in all 24 scenarios.
+> top-7.74% (budget chosen on val) +€40K–€148K simulated (first-contact-only
+> to every-contact; ~79K distinct customers over 3 months), segment rule
+> −€68.7K, contact-everyone −€950K; segment rule loses money in all 24
+> scenarios. 2026-09-29 /audit findings #1-#3 fixed.
 > **Phase 4 complete** (`reports/04_targeting_roi.md`). Next: Phase 5 polish.
 > Full detail (all Phase 1-3 build steps, audit fixes, and findings) is in
 > the Working Log below.
@@ -932,3 +934,35 @@ entry to the working log every session, even a short one.
 - Next: Phase 5 - pick between the executive one-pager, the interview
   cheat sheet, or the Streamlit dashboard (sliders over cost/value/uplift
   would reuse `exact_profit_curve` directly).
+
+### 2026-09-29 (cont'd) — /audit run + fixes for findings #1-#3
+
+- Ran `/audit` (entry in `docs/audit_log.md`). Four new findings. Fixed
+  #1-#3 this session. #4 ([min-campaign-floor-eyeballed], low) is left open
+  and documented in report 04.
+- Explained unit of analysis / grain and repeat-contact accounting
+  (`docs/concepts_log.md`).
+- #1 [customer-month-vs-customer-grain]: `targeting_roi.py` now reports
+  distinct customers per list and a first-contact-only profit (base case
+  +€40,232 vs. +€147,902; the sweep gets a strict model-profit column).
+  Report 04 was rewritten to say "contacts (customer-months)" vs.
+  "customers", present a monthly campaign (~68.8K emails/month, 79,154
+  people over 3 months, 58,650 emailed every month), and give profit as
+  a €40K–€148K range. Under strict accounting the model loses a little in
+  email scenarios with break-even ≥ 3.33%, and phone €300/40% flips to
+  −€63,750. It still beats the segment rule and contact-everyone
+  everywhere.
+- #2 [stale-phase3-outreach-claims]: report 03 gets a dated "superseded by
+  Phase 4" note, a corrected customer count (61,705 distinct, not "114K"),
+  and a resolution note on its open question. Recap PDF: Step 18 retitled,
+  counts fixed, "Later update (Phase 4)" callout, Phase 4 status bullet,
+  "Next up" is now Phase 5. Deep-dive PDF: count fixed, closing section
+  replaced with a Phase 4 summary. Both regenerated. Resume bullet 4
+  updated to the range; bullet 3's wording is still Adam's call.
+- #3 [segment-overlap-unreported]: new `segment_overlap()`. Only 3 of
+  177,720 segment rows are in the model's top 7.74%; the median segment
+  row is at the 22.6th rank percentile. Added to report 04 and report 03's
+  resolution note. Output: `reports/targeting_segment_overlap.csv`.
+- Tests: 4 new (first-contact mask, strict profit, distinct customers,
+  overlap). Suite is 60, all passing.
+- Next: decide resume bullet 3's wording, then Phase 5.

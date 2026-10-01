@@ -1033,3 +1033,40 @@ the margin. The right reading is "break-even", not "profitable". (3) Every
 scenario still uses relative uplift, so ranking by score is optimal *by
 assumption* (decision 005). The sweep varies how big uplift is, never
 *who* is persuadable.
+
+### 2026-09-29 — Unit of analysis (grain) and repeat-contact accounting
+
+**Concept**: every table has a grain, meaning what one row stands for.
+Counts, rates and costs are only meaningful once you say which unit
+they're per. When the unit a model scores (customer-month) differs from the
+unit a business pays for (a person, or one email), the accounting has to
+translate between them explicitly.
+
+**Why here**: `/audit` (2026-09-29, [customer-month-vs-customer-grain])
+found report 04 calling 206,276 "contacts" "customers". The modeling table
+is one row per customer per month, and test pools 3 months. Those contacts
+are really 79,154 people, and 58,650 of them are emailed in all 3 months.
+The same slip had already reached report 03 and the recap PDF ("114K" /
+"over 110,000 customers" for what is 61,705 people).
+
+**How it works**: report both units side by side, contacts (emails sent,
+which drive cost) and distinct customers (people reached). Then make the
+hidden assumption visible. The original profit formula credits every
+email with the same 20% uplift, including the 3rd email to the same person
+(generous). A **first-contact-only** version keeps every email's cost but
+credits only adoptions on a customer's first contact (strict). Code:
+`first_contact_mask` / `first_contact_only_profit` in
+`src/models/targeting_roi.py`. Base case: +€147.9K generous vs. +€40.2K
+strict. Only 57% of captured adoptions happen on a first contact. The
+ordering of strategies holds under both. The size of the profit doesn't.
+Ranking each month separately gives the identical €147,902, so the pooled
+ranking wasn't the problem. The wording and the repeat-contact assumption
+were.
+
+**Watch out for**: (1) "n" in a report should always name its unit. "114K"
+of what? (2) Repeated rows of the same entity also break independence, so
+a binomial noise estimate built on row counts understates the real noise.
+(3) The strict number here is a lower bound for *this plan*, not the best
+plan under strict accounting. The budget was chosen assuming repeats pay.
+The real fix for a deployment is a contact cap per customer, which is a
+different strategy, not a different accounting.

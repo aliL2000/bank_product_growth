@@ -7,6 +7,17 @@ baseline from a ranking tool into an explanation — what actually drives a
 predicted adoption, whether its confidence can be trusted, and which real
 customer segment the bank should prioritize for credit card outreach.
 
+> **Update 2026-09-29 (Phase 4): the outreach recommendation in this
+> report is superseded.** `reports/04_targeting_roi.md` found that
+> contacting the segment below loses money in all 24 simulated cost/value/
+> uplift scenarios. It converts at 0.38% on test, below the 0.48%
+> population rate and far below the 1.67% base-case break-even, and the
+> model puts only 3 of its 177,720 test rows in its own contact list. The
+> segment's 5x lift over other single-product customers is still correct,
+> but it's lift relative to a very low baseline, not a reason to contact
+> them. The findings below are kept as written at the time. Where they
+> recommend outreach, read the Phase 4 result instead.
+
 All findings below are computed on **val** (1,751,740 rows, 0.438% base
 rate), not test — exploratory work, not a reported metric, so test's
 one-time-only guarantee (`docs/decisions/004-three-way-split.md`) stays
@@ -105,7 +116,8 @@ customer segment, holding **exactly one existing product**, aged **35–64**.
 
 | | |
 |---|---|
-| Val rows | 113,858 |
+| Val rows (customer-months, 2 months) | 113,858 |
+| Distinct customers | 61,705 |
 | Adoptions | 410 |
 | Observed rate | 0.360% |
 | One-product-tier baseline | 0.069% |
@@ -143,8 +155,13 @@ and it isn't the customer who looks best on a raw predicted score either
 specific, sizeable, real group: **active, `particulares`-segment customers
 who already hold exactly one product and are 35–64 years old**. They convert
 to credit card holders at roughly **5x the rate of other single-product
-customers**, and there are enough of them (114K in a single 2-month sample)
-to be a genuine outreach target, not a statistical curiosity.
+customers**, and there are enough of them (about 62K distinct customers,
+114K customer-months, in a single 2-month sample) to be a genuine outreach
+target, not a statistical curiosity.
+
+*(2026-09-29: the customer count above was corrected. It originally read
+"114K", which counted customer-months, not people. The "genuine outreach
+target" conclusion is superseded by Phase 4; see the note at the top.)*
 
 ## Implications for Phase 4
 
@@ -157,6 +174,10 @@ to be a genuine outreach target, not a statistical curiosity.
   targeting) or whether it's a distinct signal the model underweights (in
   which case combining the rule with the score could beat either alone) —
   an open question for Phase 4, not resolved here.
+  *Resolved 2026-09-29 (`reports/04_targeting_roi.md`): neither. The model
+  ranks the segment moderately (median row at the 22.6th percentile) but
+  puts only 3 of 177,720 test rows in its top 7.74% list, and the rule
+  loses money on its own under every scenario tested.*
 - `[eyeballed-cutoffs]` (age >100 cutoff, tenure buckets, income quintiles,
   and now this report's age bands) remains open and low-priority — none of
   today's findings depended on a cutoff being exactly right, just roughly
