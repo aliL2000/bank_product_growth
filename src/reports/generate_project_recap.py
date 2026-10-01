@@ -128,7 +128,8 @@ def build():
         0, 5,
         "Prepared September 2026 - covers sessions from project kickoff "
         "through the end of Phase 3 (explainability and segment "
-        "identification)",
+        "identification) step by step, with Phase 4's targeting result "
+        "summarized on the final page",
         align="L", new_x="LMARGIN", new_y="NEXT",
     )
     pdf.ln(4)
@@ -783,7 +784,7 @@ def build():
     pdf.add_page()
     pdf.numbered_step(
         18,
-        "Found a specific, real customer segment worth prioritizing",
+        "Found a specific, real customer segment that converts unusually well",
         "The last piece of this phase turned everything learned so far "
         'into something actionable: which specific group of customers '
         "should the bank actually prioritize for credit card outreach? "
@@ -803,7 +804,8 @@ def build():
         "customer segment, already hold exactly one product, and are aged "
         "35-64. This group converts to credit card holders at roughly 5x "
         "the rate of other similar one-product customers - and it's a "
-        "large, real group (over 110,000 customers in just this sample), "
+        "large, real group (about 62,000 different customers in just this "
+        "two-month sample), "
         "not a fluke. A statistical technique that specifically discounts "
         "patterns found in small, unreliable samples (rather than just "
         "trusting a raw percentage) was used to confirm this wasn't just "
@@ -812,6 +814,16 @@ def build():
     pdf.body(
         "This closed out Phase 3, and gives Phase 4 a concrete, plain-"
         "English targeting rule to compare against the model's raw score."
+    )
+    pdf.callout(
+        "Later update (Phase 4):",
+        "Once real (simulated) costs were attached, this segment turned "
+        "out NOT to be worth contacting. It converts 5x better than other "
+        "single-product customers, but single-product customers almost "
+        "never adopt, so in absolute terms the segment converts below the "
+        "average customer. Emailing it lost money under every one of the "
+        "24 cost scenarios tested, and the model itself almost never puts "
+        "these customers on its contact list. See the final page.",
     )
 
     # --- Final page: status + next ---
@@ -874,29 +886,38 @@ def build():
         "value."
     )
     pdf.bullet(
-        "A specific, real customer segment worth prioritizing was found: "
-        "active, single-product customers aged 35-64 in the bank's "
+        "A specific, real customer segment was found: active, "
+        "single-product customers aged 35-64 in the bank's "
         '"particulares" segment, who convert to credit card holders at '
-        "roughly 5x the rate of similar customers - large enough (over "
-        "110,000 customers in this sample) to be a genuine target, "
-        "confirmed with a statistical check against it being a fluke."
+        "roughly 5x the rate of similar customers (about 62,000 "
+        "customers in this sample), confirmed with a statistical check "
+        "against it being a fluke."
+    )
+    pdf.bullet(
+        "Phase 4 put simulated costs on each way of choosing who to "
+        "contact. Emailing the model's top-ranked customers each month "
+        "(about 79,000 different people over three months) was the only "
+        "strategy that reliably made money: roughly EUR 40K-148K of "
+        "simulated profit, depending on whether follow-up emails to the "
+        "same person help. Emailing everyone lost about EUR 1M. The "
+        "Phase 3 segment lost money in every scenario tested - it's "
+        "promising compared with similar customers, but not compared "
+        "with what an email costs."
     )
     pdf.ln(1)
     pdf.set_font("Helvetica", "B", 11.5)
     pdf.set_text_color(*TEAL)
-    pdf.cell(0, 7, "Phases 1 through 3 are complete.", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 7, "Phases 1 through 4 are complete.", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(2)
     pdf.set_font("Helvetica", "B", 12)
     pdf.set_text_color(*TEAL)
     pdf.cell(0, 7, "Next up", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(1)
     pdf.body(
-        "Phase 4: attach a deliberately-labeled, simulated cost-per-contact "
-        "and value-per-adoption to turn the model's ranking - and the "
-        "segment found in Step 18 - into an actual targeting "
-        "recommendation, comparing model-score targeting, the plain-"
-        "English business rule found above, and a contact-everyone "
-        "baseline."
+        "Phase 5: polish - a one-page executive summary, an interview "
+        "cheat sheet, and a small interactive dashboard where the cost "
+        "and value assumptions can be changed to see how the "
+        "recommendation responds."
     )
     pdf.set_font("Helvetica", "I", 9.5)
     pdf.set_text_color(*GRAY)

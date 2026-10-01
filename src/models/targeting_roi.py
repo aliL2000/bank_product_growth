@@ -20,6 +20,14 @@ The model is also scored at exactly the segment rule's list size, so the
 model-vs-rule comparison isn't confounded by the two lists having
 different sizes.
 
+Grain: one row is a customer-month (ncodpers x fecha_dato), and test pools
+3 months, so a "contact" is one email in one month and the same customer
+can be contacted in every month. Results report distinct customers next to
+contacts, plus a stricter first-contact-only profit: only a customer's first
+contact in the window earns uplift; repeat contacts cost but add nothing.
+The main profit (every contact earns uplift) is the generous end of that
+range (docs/audit_log.md, 2026-09-29, [customer-month-vs-customer-grain]).
+
 Sweep: every cost x value x uplift combination from roi_assumptions.py (full
 grid, not one-at-a-time, so interactions show up). Profit =
 u*V*(adopters - K*c/(u*V)), so the best list depends only on the break-even
@@ -90,6 +98,41 @@ def list_result(strategy: str, y_true: np.ndarray, contacted: np.ndarray, **econ
     }
 
 
+def first_contact_mask(contacted: np.ndarray, customers: np.ndarray, months: np.ndarray) -> np.ndarray:
+    """True for each contacted row that is its customer's earliest contacted
+    month; False for repeat contacts and for rows not contacted."""
+    idx = np.flatnonzero(contacted)
+    order = idx[np.lexsort((months[idx], customers[idx]))]
+    first = np.ones(len(order), dtype=bool)
+    first[1:] = customers[order[1:]] != customers[order[:-1]]
+    mask = np.zeros(len(contacted), dtype=bool)
+    mask[order[first]] = True
+    return mask
+
+
+def first_contact_only_profit(y_true: np.ndarray, contacted: np.ndarray, customers: np.ndarray,
+                              months: np.ndarray, **econ) -> float:
+    """Stricter profit: every contact costs, but only adopters reached on
+    their customer's first contact count toward incremental adoptions."""
+    first = first_contact_mask(contacted, customers, months)
+    return simulated_profit(int(contacted.sum()), int(y_true[first].sum()), **econ)
+
+
+def segment_overlap(scores: np.ndarray, segment_mask: np.ndarray, n_top: int) -> dict:
+    """How the model itself ranks the Phase 3 segment: share of segment rows
+    inside the top-n_top list, and the segment's median rank percentile
+    (0% = highest score, 100% = lowest)."""
+    rank_pct = np.empty(len(scores))
+    rank_pct[np.argsort(-scores, kind="stable")] = np.arange(len(scores)) / len(scores)
+    in_top = top_k_mask(scores, n_top)
+    return {
+        "segment_rows": int(segment_mask.sum()),
+        "segment_rows_in_top_k": int((segment_mask & in_top).sum()),
+        "segment_share_in_top_k": float((segment_mask & in_top).sum() / segment_mask.sum()),
+        "segment_median_rank_pct": float(np.median(rank_pct[segment_mask])),
+    }
+
+
 def top_k_mask(scores: np.ndarray, n_contacted: int) -> np.ndarray:
     mask = np.zeros(len(scores), dtype=bool)
     mask[np.argsort(-scores, kind="stable")[:n_contacted]] = True
@@ -122,28 +165,40 @@ def profit_curve(y_true: np.ndarray, scores: np.ndarray, budget_fracs=BUDGET_FRA
 
 
 def compare_strategies(y_true: np.ndarray, scores: np.ndarray, segment_mask: np.ndarray,
-                       chosen_budget_frac: float, **econ) -> pd.DataFrame:
+                       chosen_budget_frac: float, customers: np.ndarray | None = None,
+                       months: np.ndarray | None = None, **econ) -> pd.DataFrame:
+    """One row per strategy. With customers/months given, also reports
+    distinct customers reached and the first-contact-only profit."""
     n_chosen = int(round(len(y_true) * chosen_budget_frac))
-    rows = [
-        list_result("model_top_k @ val-chosen budget", y_true, top_k_mask(scores, n_chosen), **econ),
-        list_result("segment_rule", y_true, segment_mask, **econ),
-        list_result("model_top_k @ segment's list size", y_true,
-                    top_k_mask(scores, int(segment_mask.sum())), **econ),
-        list_result("contact_everyone", y_true, np.ones(len(y_true), dtype=bool), **econ),
-    ]
+    lists = {
+        "model_top_k @ val-chosen budget": top_k_mask(scores, n_chosen),
+        "segment_rule": segment_mask,
+        "model_top_k @ segment's list size": top_k_mask(scores, int(segment_mask.sum())),
+        "contact_everyone": np.ones(len(y_true), dtype=bool),
+    }
+    rows = []
+    for name, contacted in lists.items():
+        row = list_result(name, y_true, contacted, **econ)
+        if customers is not None:
+            row["distinct_customers"] = int(np.unique(customers[contacted]).size)
+            row["profit_first_contact_only_eur"] = first_contact_only_profit(
+                y_true, contacted, customers, months, **econ)
+        rows.append(row)
     return pd.DataFrame(rows)
 
 
 def sensitivity_sweep(y_val: np.ndarray, val_scores: np.ndarray, y_test: np.ndarray,
-                      test_scores: np.ndarray, segment_mask: np.ndarray) -> pd.DataFrame:
+                      test_scores: np.ndarray, segment_mask: np.ndarray,
+                      customers: np.ndarray | None = None, months: np.ndarray | None = None) -> pd.DataFrame:
     """One row per cost x value x uplift scenario: budget chosen on val, then
     each strategy's test profit at that scenario's economics."""
     rows = []
     for (channel, cost), value, uplift in product(COST_SWEEP.items(), VALUE_SWEEP, UPLIFT_SWEEP):
         econ = {"cost_per_contact": cost, "value_per_adoption": value, "uplift": uplift}
         chosen = best_budget_frac(y_val, val_scores, **econ)
-        table = compare_strategies(y_test, test_scores, segment_mask, chosen, **econ).set_index("strategy")
-        rows.append({
+        table = compare_strategies(y_test, test_scores, segment_mask, chosen,
+                                   customers, months, **econ).set_index("strategy")
+        row = {
             "channel": channel,
             "cost_per_contact": cost,
             "value_per_adoption": value,
@@ -154,7 +209,11 @@ def sensitivity_sweep(y_val: np.ndarray, val_scores: np.ndarray, y_test: np.ndar
             "model_profit_eur": table.loc["model_top_k @ val-chosen budget", "profit_eur"],
             "segment_rule_profit_eur": table.loc["segment_rule", "profit_eur"],
             "contact_everyone_profit_eur": table.loc["contact_everyone", "profit_eur"],
-        })
+        }
+        if customers is not None:
+            row["model_profit_first_contact_only_eur"] = table.loc[
+                "model_top_k @ val-chosen budget", "profit_first_contact_only_eur"]
+        rows.append(row)
     return pd.DataFrame(rows)
 
 
@@ -171,7 +230,8 @@ def format_table(table: pd.DataFrame) -> str:
 
 if __name__ == "__main__":
     # FEATURE_COLS already holds every raw column in_segment() needs.
-    df = pd.read_parquet(MODELING_TABLE_PATH, columns=FEATURE_COLS + ["adoption", "split"])
+    df = pd.read_parquet(MODELING_TABLE_PATH,
+                         columns=FEATURE_COLS + ["ncodpers", "fecha_dato", "adoption", "split"])
     train_df = df[df["split"] == "train"]
     val_df = df[df["split"] == "val"]
     test_df = df[df["split"] == "test"]
@@ -185,6 +245,7 @@ if __name__ == "__main__":
     test_scores = model.predict_proba(X_test)[:, 1]
     y_val_arr, y_test_arr = y_val.to_numpy(), y_test.to_numpy()
     segment_mask = in_segment(test_df).to_numpy()
+    customers, months = test_df["ncodpers"].to_numpy(), test_df["fecha_dato"].to_numpy()
 
     # --- Step 2: base case ---
     print(f"break-even precision (base case): {break_even_precision():.3%}\n")
@@ -196,22 +257,30 @@ if __name__ == "__main__":
     print(format_table(test_curve))
 
     chosen = best_budget_frac(y_val_arr, val_scores)
-    print(f"\n-> budget chosen on val (exact curve): {chosen:.2%} of customers")
+    print(f"\n-> budget chosen on val (exact curve): {chosen:.2%} of customer-months")
     print(f"   (test's own exact peak would have been {best_budget_frac(y_test_arr, test_scores):.2%} "
           "- context only, not used)\n")
 
-    comparison = compare_strategies(y_test_arr, test_scores, segment_mask, chosen)
-    print("base-case strategy comparison on test:")
+    comparison = compare_strategies(y_test_arr, test_scores, segment_mask, chosen, customers, months)
+    print("base-case strategy comparison on test "
+          f"({test_df['fecha_dato'].nunique()} months, {np.unique(customers).size:,} distinct customers):")
     print(format_table(comparison))
 
+    overlap = segment_overlap(test_scores, segment_mask, int(round(len(y_test_arr) * chosen)))
+    print("\nhow the model ranks the Phase 3 segment on test:")
+    print(f"  {overlap['segment_rows_in_top_k']:,} of {overlap['segment_rows']:,} segment rows "
+          f"({overlap['segment_share_in_top_k']:.2%}) are in the model's top {chosen:.2%}; "
+          f"median segment row sits at the {overlap['segment_median_rank_pct']:.1%} rank percentile")
+
     # --- Step 3: sensitivity sweep ---
-    sweep = sensitivity_sweep(y_val_arr, val_scores, y_test_arr, test_scores, segment_mask)
+    sweep = sensitivity_sweep(y_val_arr, val_scores, y_test_arr, test_scores, segment_mask, customers, months)
     print("\nsensitivity sweep (test profit, budget chosen on val per scenario):")
     print(format_table(sweep))
 
     pd.concat([val_curve.assign(split="val"), test_curve.assign(split="test")]).to_csv(
         REPORTS_DIR / "targeting_profit_curve.csv", index=False)
     comparison.to_csv(REPORTS_DIR / "targeting_strategy_comparison.csv", index=False)
+    pd.DataFrame([overlap]).to_csv(REPORTS_DIR / "targeting_segment_overlap.csv", index=False)
     sweep.to_csv(REPORTS_DIR / "targeting_sensitivity_sweep.csv", index=False)
     print(f"\nWrote targeting_profit_curve.csv, targeting_strategy_comparison.csv, "
-          f"targeting_sensitivity_sweep.csv to {REPORTS_DIR}")
+          f"targeting_segment_overlap.csv, targeting_sensitivity_sweep.csv to {REPORTS_DIR}")

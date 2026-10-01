@@ -1082,7 +1082,8 @@ def build():
             "segmento=particulares customers holding exactly one product, "
             "aged 35-64, adopt at 5.20x their product tier's baseline rate "
             "(4.72x on the conservative lower-bound estimate), n=113,858 "
-            "val rows / 410 adoptions - and not a lucky single cell, since "
+            "val customer-months (61,705 distinct customers) / 410 "
+            "adoptions - and not a lucky single cell, since "
             "the same three-way combination ranked in the top 5 across "
             "every age band tested."
         ),
@@ -1112,18 +1113,27 @@ def build():
 
     # ================= CLOSING =================
     pdf.add_page()
-    pdf.part_title("Looking Further Ahead (Phase 4, not yet detailed)")
+    pdf.part_title("Phase 4 Outcome (summary - full detail in reports/04)")
     pdf.set_font("Helvetica", "", 10.5)
     pdf.set_text_color(*DARK)
     pdf.multi_cell(
         0, 5.6,
-        "One further phase is on the roadmap but not yet designed in "
-        "enough detail to document at this depth: Phase 4 will attach a "
-        "deliberately-labeled simulated cost-per-contact and "
-        "value-per-adoption to turn the ranked model output - and Part 9's "
-        "segment - into an actual targeting recommendation, comparing "
-        "model-score targeting, the business-rule segment found in Part 9, "
-        "and a contact-everyone baseline.",
+        "Phase 4 priced each targeting strategy with simulated economics "
+        "(email EUR 0.50/contact, EUR 150 per incremental adoption, 20% "
+        "relative uplift; break-even precision 1.67%), picked the contact "
+        "budget on val's exact profit curve, and reported on test. Model "
+        "top-7.74% of customer-months (~79K distinct customers over 3 "
+        "months): +EUR 148K if every contact earns uplift, +EUR 40K if "
+        "only a customer's first contact does. Contact-everyone: about "
+        "-EUR 1M. Part 9's segment: -EUR 69K. It converts at 0.38% on "
+        "test, below the 0.48% base rate, and only 3 of its 177,720 rows "
+        "reach the model's own top-7.74% list. So the segment's 5x lift "
+        "is relative to a very low tier baseline and doesn't make it a "
+        "contact list. A 24-scenario cost x value x uplift sweep keeps "
+        "the ordering (model > segment rule > contact-everyone) in every "
+        "scenario. Only the size of the profit moves. The main caveat: "
+        "relative uplift makes ranking by propensity optimal by "
+        "assumption. Real persuadability needs experimental data.",
         align="L", new_x="LMARGIN", new_y="NEXT",
     )
 
@@ -1134,7 +1144,7 @@ def build():
         0, 5,
         "This document reflects project state as of September 2026, "
         "through the end of Phase 3 (explainability, calibration, and "
-        "segment identification). "
+        "segment identification) in full detail, plus a Phase 4 summary. "
         "For the running, dated log of every concept as it's introduced, "
         "see docs/concepts_log.md in the repository; for the "
         "plain-language project narrative, see Project_Recap.pdf.",

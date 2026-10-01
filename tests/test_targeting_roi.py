@@ -10,9 +10,12 @@ from models.targeting_roi import (
     best_budget_frac,
     compare_strategies,
     exact_profit_curve,
+    first_contact_mask,
+    first_contact_only_profit,
     in_segment,
     list_result,
     profit_curve,
+    segment_overlap,
     sensitivity_sweep,
     top_k_mask,
 )
@@ -112,3 +115,45 @@ def test_in_segment_matches_phase3_definition():
     # Only the first two rows qualify: row 2 has 2 products, row 3 is
     # inactive, row 4 is 30 (outside 35-64), row 5 is `top`, not particulares.
     assert in_segment(df).tolist() == [True, True, False, False, False, False]
+
+
+def test_first_contact_mask_keeps_each_customers_earliest_contacted_month():
+    # Customer 7 contacted in months 2 and 1 (row order scrambled), customer 8
+    # in month 3 only; customer 9 isn't contacted at all.
+    customers = np.array([7, 8, 7, 9])
+    months = np.array([2, 3, 1, 1])
+    contacted = np.array([True, True, True, False])
+    assert first_contact_mask(contacted, customers, months).tolist() == [False, True, True, False]
+
+
+def test_first_contact_only_profit_charges_repeats_but_credits_only_first_contacts():
+    # Customer 7 is contacted twice and adopts in the later month (a repeat
+    # contact) -> not credited. Customer 8 adopts on first contact -> credited.
+    # 3 contacts * 0.50 = 1.50 cost; 1 credited adopter * 30 = 30.
+    customers = np.array([7, 7, 8])
+    months = np.array([1, 2, 1])
+    y = np.array([0, 1, 1])
+    contacted = np.ones(3, dtype=bool)
+    assert first_contact_only_profit(y, contacted, customers, months) == pytest.approx(28.5)
+
+
+def test_compare_strategies_reports_distinct_customers_when_ids_given():
+    y = np.array([0, 0, 1, 0])
+    scores = np.array([0.9, 0.8, 0.7, 0.1])
+    customers = np.array([1, 1, 2, 3])
+    months = np.array([1, 2, 1, 1])
+    segment = np.array([False, False, True, True])
+    table = compare_strategies(y, scores, segment, 0.5, customers, months).set_index("strategy")
+    # Top-2 by score are both customer 1 (two months) -> 2 contacts, 1 person.
+    assert table.loc["model_top_k @ val-chosen budget", "distinct_customers"] == 1
+    assert table.loc["contact_everyone", "distinct_customers"] == 3
+
+
+def test_segment_overlap_counts_segment_rows_in_top_k_and_median_rank():
+    scores = np.array([0.9, 0.8, 0.7, 0.6])
+    segment = np.array([False, True, False, True])
+    result = segment_overlap(scores, segment, n_top=2)
+    assert result["segment_rows_in_top_k"] == 1
+    assert result["segment_share_in_top_k"] == pytest.approx(0.5)
+    # Segment ranks are 1/4 and 3/4 -> median 0.5.
+    assert result["segment_median_rank_pct"] == pytest.approx(0.5)
